@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2016",
+    "baseUrl": "./src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "downlevelIteration": true,
+    "lib": [
+      "dom",
+      "ESNext"
+    ],
+    "paths": {
+      "mods/*": [
+        "mods/*"
+      ],
+      "libs/*": [
+        "libs/*"
+      ],
+    },
+    "plugins": [
+      {
+        "transform": "typescript-transform-paths"
+      },
+      {
+        "transform": "typescript-transform-paths",
+        "afterDeclarations": true
+      }
+    ]
+  },
+  "exclude": [
+    "node_modules"
+  ],
+  "include": [
+    "./src/index.ts",
+    "./src/index.test.ts"
+  ],
+}

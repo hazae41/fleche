@@ -1,0 +1,68 @@
+{
+  "type": "module",
+  "name": "@hazae41/fleche",
+  "version": "0.0.1",
+  "description": "Zero-copy HTTP protocol for the web",
+  "homepage": "https://github.com/hazae41/fleche",
+  "repository": "github:hazae41/fleche",
+  "author": "hazae41",
+  "license": "MIT",
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.mjs",
+  "types": "./dist/types/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "./dist/esm",
+    "./dist/cjs",
+    "./dist/types"
+  ],
+  "scripts": {
+    "build": "rimraf dist && rollup -c",
+    "test": "node ./dist/test/src/index.test.cjs",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@hazae41/binary": "^1.0.8",
+    "@hazae41/foras": "^2.0.3",
+    "tslib": "^2.4.1"
+  },
+  "devDependencies": {
+    "@hazae41/phobos": "^1.0.7",
+    "@rollup/plugin-commonjs": "^24.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.1",
+    "@rollup/plugin-typescript": "^10.0.1",
+    "@types/node": "^18.11.18",
+    "rimraf": "^3.0.2",
+    "rollup": "^3.9.1",
+    "rollup-plugin-dts": "^5.1.0",
+    "rollup-plugin-node-externals": "^5.0.3",
+    "ts-node": "^10.9.1",
+    "ttypescript": "^1.5.15",
+    "typescript": "^4.9.4",
+    "typescript-transform-paths": "^3.4.4"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/cjs/index.cjs",
+      "require": "./dist/cjs/index.cjs"
+    }
+  },
+  "keywords": [
+    "http",
+    "https",
+    "protocol",
+    "browser",
+    "packets",
+    "compression",
+    "messaging",
+    "encoding",
+    "decoding",
+    "connexion",
+    "webassembly",
+    "typescript",
+    "esmodules",
+    "tested",
+    "unit-tested"
+  ]
+}
