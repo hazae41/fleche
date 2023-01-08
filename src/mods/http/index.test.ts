@@ -10,7 +10,7 @@ test("HTTP 1.1 should gracefully cancel", async () => {
     }),
     writable: new WritableStream<Buffer>({
       write(chunk) {
-        console.log(chunk.toString("utf8"))
+        console.log("sub:", chunk.toString("utf8"))
       }
     })
   }
@@ -23,7 +23,7 @@ test("HTTP 1.1 should gracefully cancel", async () => {
     }),
     writable: new WritableStream<Buffer>({
       write(chunk) {
-        console.log(chunk.toString("utf8"))
+        console.log("sup:", chunk.toString("utf8"))
       }
     })
   }
