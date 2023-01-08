@@ -6,6 +6,8 @@ export type Stream<T> = ReadableWritablePair<T>
 export type Reader<T> = ReadableStreamDefaultReader<T>
 export type Writer<T> = WritableStreamDefaultWriter<T>
 
+export type TransformController<T> = TransformStreamDefaultController<Buffer>
+
 export namespace Streams {
 
   export async function* read<T>(reader: Reader<T>, signal: AbortSignal) {

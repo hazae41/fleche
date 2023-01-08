@@ -18,6 +18,7 @@ This is experimental software in early development
 - Transport agnostic (Tor, TLS)
 - WebStreams backpressure
 - AbortSignal cancellation
+- Compatible with fetch
 - HTTP 1.1
 
 ### [Upcoming Features](https://github.com/sponsors/hazae41)

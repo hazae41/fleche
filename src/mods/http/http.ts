@@ -46,11 +46,13 @@ export interface HttpGzipCompression {
   decoder: GzDecoder
 }
 
-export class Http {
+export class HttpStream extends EventTarget {
   private input = new TransformStream<Buffer, Buffer>()
   private output = new TransformStream<Buffer, Buffer>()
 
   private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(10 * 1024) }
+
+  readonly aborter = new AbortController()
 
   readonly reading: Promise<void>
   readonly writing: Promise<void>
@@ -60,9 +62,10 @@ export class Http {
    * @param substream substream
    */
   constructor(
-    readonly substream: Stream<Buffer>,
-    readonly signal: AbortSignal
+    readonly substream: Stream<Buffer>
   ) {
+    super()
+
     this.reading = this.read()
     this.writing = this.write()
   }
@@ -76,11 +79,14 @@ export class Http {
   }
 
   async read() {
+    const { signal } = this.aborter
+
     const reader = this.substream.readable.getReader()
     const writer = this.output.writable.getWriter()
 
     try {
-      for await (const value of Streams.read(reader, this.signal))
+      console.log("reading...")
+      for await (const value of Streams.read(reader, signal))
         await this.onRead(writer, value)
       await writer.close()
     } catch (e: unknown) {
@@ -92,17 +98,29 @@ export class Http {
     }
   }
 
+  body = false
+
   private async onRead(writer: Writer<Buffer>, value: Buffer) {
-    await writer.write(value)
+    console.log("read", value)
+
+    if (!this.body) {
+      this.dispatchEvent(new Event("body"))
+      this.body = true
+    } else {
+      await writer.write(value)
+    }
+
     await new Promise(ok => setTimeout(ok, 100))
   }
 
   async write() {
+    const { signal } = this.aborter
+
     const reader = this.input.readable.getReader()
     const writer = this.substream.writable.getWriter()
 
     try {
-      for await (const value of Streams.read(reader, this.signal))
+      for await (const value of Streams.read(reader, signal))
         await this.onWrite(writer, value)
       await writer.close()
     } catch (e: unknown) {
@@ -115,6 +133,7 @@ export class Http {
   }
 
   private async onWrite(writer: Writer<Buffer>, value: Buffer) {
+    console.log("write", value)
     await writer.write(value)
     await new Promise(ok => setTimeout(ok, 100))
   }
