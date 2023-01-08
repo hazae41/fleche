@@ -1,7 +1,7 @@
 import { test } from "@hazae41/phobos"
 import { Http } from "./http.js"
 
-test("HTTP 1.1", async () => {
+test("HTTP 1.1 should gracefully cancel", async () => {
   const sub = {
     readable: new ReadableStream<Buffer>({
       pull(controller) {
@@ -28,12 +28,13 @@ test("HTTP 1.1", async () => {
     })
   }
 
-  const http = new Http(sub)
-  const pread = http.read()
-  const pwrite = http.write()
+  const aborter = new AbortController()
+  const http = new Http(sub, aborter.signal)
 
-  http.readable.pipeTo(sup.writable)
-  sup.readable.pipeTo(http.writable)
+  http.readable.pipeTo(sup.writable).catch(() => { })
+  sup.readable.pipeTo(http.writable).catch(() => { })
 
-  await Promise.all([pread, pwrite])
+  setTimeout(() => aborter.abort(), 1000)
+
+  await Promise.all([http.reading, http.writing])
 })

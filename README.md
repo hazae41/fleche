@@ -16,7 +16,8 @@ This is experimental software in early development
 - 100% TypeScript and ESM
 - Zero-copy reading and writing
 - Transport agnostic (Tor, TLS)
-- WebStreams based backpressure
+- WebStreams backpressure
+- AbortSignal cancellation
 - HTTP 1.1
 
 ### [Upcoming Features](https://github.com/sponsors/hazae41)

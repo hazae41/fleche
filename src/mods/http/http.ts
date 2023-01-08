@@ -1,6 +1,6 @@
 import { Binary } from "@hazae41/binary"
 import { GzDecoder } from "@hazae41/foras"
-import { Reader, Writer } from "libs/streams/types.js"
+import { Stream, Streams, Writer } from "libs/streams/streams.js"
 
 export type HttpState =
   | HttpNoneState
@@ -47,86 +47,75 @@ export interface HttpGzipCompression {
 }
 
 export class Http {
-  private in = new TransformStream<Buffer, Buffer>()
-  private out = new TransformStream<Buffer, Buffer>()
+  private input = new TransformStream<Buffer, Buffer>()
+  private output = new TransformStream<Buffer, Buffer>()
 
   private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(10 * 1024) }
 
+  readonly reading: Promise<void>
+  readonly writing: Promise<void>
+
   /**
    * Create a new HTTP 1.1 stream
-   * @param sub substream
+   * @param substream substream
    */
   constructor(
-    readonly sub: ReadableWritablePair<Buffer, Buffer>,
-  ) { }
+    readonly substream: Stream<Buffer>,
+    readonly signal: AbortSignal
+  ) {
+    this.reading = this.read()
+    this.writing = this.write()
+  }
 
   get writable() {
-    return this.in.writable
+    return this.input.writable
   }
 
   get readable() {
-    return this.out.readable
+    return this.output.readable
   }
 
   async read() {
-    const reader = this.sub.readable.getReader()
-    const writer = this.out.writable.getWriter()
+    const reader = this.substream.readable.getReader()
+    const writer = this.output.writable.getWriter()
 
     try {
-      await this._read(reader, writer)
+      for await (const value of Streams.read(reader, this.signal))
+        await this.onRead(writer, value)
+      await writer.close()
     } catch (e: unknown) {
-      await reader.cancel()
-      await writer.abort()
+      await reader.cancel(e)
+      await writer.abort(e)
     } finally {
       reader.releaseLock()
       writer.releaseLock()
     }
   }
 
-  private async _read(reader: Reader<Buffer>, writer: Writer<Buffer>) {
-    while (true) {
-      const result = await reader.read()
-
-      if (result.done)
-        break
-      await this._onRead(writer, result.value)
-    }
-
-    await writer.close()
-  }
-
-  private async _onRead(writer: Writer<Buffer>, value: Buffer) {
-    writer.write(value)
+  private async onRead(writer: Writer<Buffer>, value: Buffer) {
+    await writer.write(value)
+    await new Promise(ok => setTimeout(ok, 100))
   }
 
   async write() {
-    const reader = this.in.readable.getReader()
-    const writer = this.sub.writable.getWriter()
+    const reader = this.input.readable.getReader()
+    const writer = this.substream.writable.getWriter()
 
     try {
-      await this._write(reader, writer)
+      for await (const value of Streams.read(reader, this.signal))
+        await this.onWrite(writer, value)
+      await writer.close()
     } catch (e: unknown) {
-      await reader.cancel()
-      await writer.abort()
+      await reader.cancel(e)
+      await writer.abort(e)
     } finally {
       reader.releaseLock()
       writer.releaseLock()
     }
   }
 
-  private async _write(reader: Reader<Buffer>, writer: Writer<Buffer>) {
-    while (true) {
-      const result = await reader.read()
-
-      if (result.done)
-        break
-      await this._onWrite(writer, result.value)
-    }
-
-    await writer.close()
-  }
-
-  private async _onWrite(writer: Writer<Buffer>, value: Buffer) {
-    writer.write(value)
+  private async onWrite(writer: Writer<Buffer>, value: Buffer) {
+    await writer.write(value)
+    await new Promise(ok => setTimeout(ok, 100))
   }
 }
