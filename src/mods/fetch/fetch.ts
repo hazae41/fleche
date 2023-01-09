@@ -20,9 +20,8 @@ export interface FetchParams {
 /**
  * Fetch adapter for HTTP streams
  * Will wait for response to be available
- * @param stream new HttpStream(sub)
  * @param input "https://google.com"
- * @param init 
+ * @param init.stream Transport substream
  * @returns 
  */
 export async function fetch(input: RequestInfo, init: RequestInit & FetchParams) {

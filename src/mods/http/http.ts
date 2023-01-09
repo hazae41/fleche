@@ -74,12 +74,14 @@ export class HttpStream extends EventTarget {
     const { signal } = params
 
     const output = new ByteStream({
-      write: this.onRead.bind(this)
+      write: this.onRead.bind(this),
+      close: controller => controller.close(),
     })
 
     const input = new ByteStream({
       start: this.onWriteStart.bind(this),
-      write: this.onWrite.bind(this)
+      write: this.onWrite.bind(this),
+      close: controller => controller.close(),
     })
 
     this.readable = output.readable
@@ -95,7 +97,7 @@ export class HttpStream extends EventTarget {
     try {
       // console.log("<-", chunk)
 
-      if (this.i++ === 2)
+      if (this.i++ === 0)
         this.dispatchEvent(new Event("body"))
 
       controller.enqueue(chunk)
@@ -124,6 +126,8 @@ export class HttpStream extends EventTarget {
 
   private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
     try {
+      // console.log("->", chunk)
+
       controller.enqueue(chunk)
     } catch (e: unknown) {
       controller.error(e)

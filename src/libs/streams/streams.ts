@@ -27,6 +27,7 @@ export namespace Streams {
 export interface ByteStreamParams {
   start?: (controller: ReadableByteStreamController) => Promise<void>
   write?: (chunk: Uint8Array, controller: ReadableByteStreamController) => void | Promise<void>
+  close?: (controller: ReadableByteStreamController) => void | Promise<void>
 }
 
 export class ByteStream {
@@ -44,23 +45,23 @@ export class ByteStream {
 
         await params.start?.(controller)
       },
-      cancel(reason) {
+      async cancel(reason) {
         writer.error(reason)
       }
     })
 
     this.writable = new WritableStream<Uint8Array>({
-      start(controller) {
+      async start(controller) {
         writer = controller
       },
       async write(chunk, controller) {
         await params.write?.(chunk, reader)
       },
-      abort(reason) {
+      async abort(reason) {
         reader.error(reason)
       },
-      close() {
-        reader.close()
+      async close() {
+        await params.close?.(reader)
       }
     })
   }

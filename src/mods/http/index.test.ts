@@ -31,6 +31,7 @@ test("HTTP 1.1 superstream", async ({ message }) => {
   }
 
   const sub = new ByteStream({
+    close: controller => controller.close(),
     async write(chunk, controller) {
       await new Promise(ok => setTimeout(ok, 100))
       controller.enqueue(chunk)
@@ -75,6 +76,7 @@ test("HTTP 1.1 fetch", async ({ message }) => {
   const start = Date.now()
 
   const sub = new ByteStream({
+    close: controller => controller.close(),
     async write(chunk, controller) {
       await new Promise(ok => setTimeout(ok, 100))
 
@@ -103,8 +105,8 @@ test("HTTP 1.1 fetch", async ({ message }) => {
   try {
     const res = await fetch("https://google.com", { stream: sub, method: "POST", body, signal })
 
-    console.log("got response", res)
-    console.log(await res.arrayBuffer())
+    console.log("response", res)
+    console.log(await res.text())
   } catch (e: unknown) {
     console.error(e)
   }

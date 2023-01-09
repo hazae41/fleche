@@ -1,4 +1,5 @@
 import { ByteStream } from "libs/streams/streams.js"
+import { CloseEvent, ErrorEvent, MessageEvent, WebSocket } from "ws"
 
 export class WebSocketStream {
 
@@ -20,12 +21,28 @@ export class WebSocketStream {
   }
 
   private async onStart(controller: ReadableByteStreamController) {
-    this.websocket.addEventListener("message", e => controller.enqueue(e.data))
-    this.websocket.addEventListener("close", e => controller.close())
-    this.websocket.addEventListener("error", e => controller.error(e))
+    const onMessage = (e: MessageEvent) => {
+      controller.enqueue(new Uint8Array(e.data as ArrayBuffer))
+    }
+
+    const onError = (e: ErrorEvent) => {
+      this.websocket.removeEventListener("message", onMessage)
+      this.websocket.removeEventListener("close", onClose)
+      controller.error(e)
+    }
+
+    const onClose = (e: CloseEvent) => {
+      this.websocket.removeEventListener("message", onMessage)
+      this.websocket.removeEventListener("error", onError)
+      controller.close()
+    }
+
+    this.websocket.addEventListener("message", onMessage)
+    this.websocket.addEventListener("error", onError)
+    this.websocket.addEventListener("close", onClose)
   }
 
-  private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
+  private async onWrite(chunk: Uint8Array) {
     this.websocket.send(chunk)
   }
 }
