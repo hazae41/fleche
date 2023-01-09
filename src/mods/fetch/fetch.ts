@@ -1,11 +1,6 @@
 import { Future } from "libs/futures/future.js"
 import { HttpStream } from "mods/http/http.js"
 
-export interface IHttpStream extends EventTarget {
-  readable: ReadableStream<Uint8Array>
-  writable: WritableStream<Uint8Array>
-}
-
 export interface FetchParams {
   stream: ReadableWritablePair<Uint8Array>
 }
