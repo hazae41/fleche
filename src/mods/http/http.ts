@@ -75,13 +75,13 @@ export class HttpStream extends EventTarget {
 
     const output = new ByteStream({
       write: this.onRead.bind(this),
-      close: controller => controller.close(),
+      close: this.onReadEnd.bind(this),
     })
 
     const input = new ByteStream({
       start: this.onWriteStart.bind(this),
       write: this.onWrite.bind(this),
-      close: controller => controller.close(),
+      close: this.onWriteClose.bind(this),
     })
 
     this.readable = output.readable
@@ -106,6 +106,10 @@ export class HttpStream extends EventTarget {
     }
   }
 
+  private async onReadEnd(controller: ReadableByteStreamController) {
+    controller.close()
+  }
+
   private async onWriteStart(controller: ReadableByteStreamController) {
     try {
       const { method, pathname, host, headers } = this.params
@@ -118,6 +122,8 @@ export class HttpStream extends EventTarget {
       headers?.forEach((v, k) => head += `${k}: ${v}\r\n`)
       head += `\r\n`
 
+      console.log(head)
+
       controller.enqueue(Uint8Arrays.fromUtf8(head))
     } catch (e: unknown) {
       controller.error(e)
@@ -126,9 +132,18 @@ export class HttpStream extends EventTarget {
 
   private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
     try {
-      // console.log("->", chunk)
+      console.log("->", Uint8Arrays.intoUtf8(chunk))
 
       controller.enqueue(chunk)
+    } catch (e: unknown) {
+      controller.error(e)
+    }
+  }
+
+  private async onWriteClose(controller: ReadableByteStreamController) {
+    try {
+      controller.enqueue(Uint8Arrays.fromUtf8(`0\r\n\r\n\r\n`))
+      controller.close()
     } catch (e: unknown) {
       controller.error(e)
     }
