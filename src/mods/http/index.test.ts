@@ -1,5 +1,5 @@
 import { test } from "@hazae41/phobos"
-import { TransformByteStream } from "libs/streams/streams.js"
+import { ByteStream } from "libs/streams/streams.js"
 import { Uint8Arrays } from "libs/uint8arrays/uint8arrays.js"
 import { fetch } from "mods/fetch/fetch.js"
 import { HttpStream } from "mods/http/http.js"
@@ -30,8 +30,8 @@ test("HTTP 1.1 superstream", async ({ message }) => {
     })
   }
 
-  const sub = new TransformByteStream({
-    async transform(chunk, controller) {
+  const sub = new ByteStream({
+    async write(chunk, controller) {
       await new Promise(ok => setTimeout(ok, 100))
       controller.enqueue(chunk)
     },
@@ -70,12 +70,12 @@ test("HTTP 1.1 superstream", async ({ message }) => {
 })
 
 test("HTTP 1.1 fetch", async ({ message }) => {
-  // return
+  return
 
   const start = Date.now()
 
-  const sub = new TransformByteStream({
-    async transform(chunk, controller) {
+  const sub = new ByteStream({
+    async write(chunk, controller) {
       await new Promise(ok => setTimeout(ok, 100))
 
       console.log("<->", Uint8Arrays.intoUtf8(chunk))
@@ -101,7 +101,7 @@ test("HTTP 1.1 fetch", async ({ message }) => {
   // setTimeout(() => aborter.abort(), 200)
 
   try {
-    const res = await fetch("https://google.com", { method: "POST", body, signal }, sub)
+    const res = await fetch("https://google.com", { stream: sub, method: "POST", body, signal })
 
     console.log("got response", res)
     console.log(await res.arrayBuffer())

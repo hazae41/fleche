@@ -1,6 +1,6 @@
 import { Binary } from "@hazae41/binary"
 import { GzDecoder } from "@hazae41/foras"
-import { Stream, TransformByteStream } from "libs/streams/streams.js"
+import { ByteStream, Stream } from "libs/streams/streams.js"
 import { Uint8Arrays } from "libs/uint8arrays/uint8arrays.js"
 
 export type HttpState =
@@ -73,13 +73,13 @@ export class HttpStream extends EventTarget {
 
     const { signal } = params
 
-    const output = new TransformByteStream({
-      transform: this.onRead.bind(this)
+    const output = new ByteStream({
+      write: this.onRead.bind(this)
     })
 
-    const input = new TransformByteStream({
+    const input = new ByteStream({
       start: this.onWriteStart.bind(this),
-      transform: this.onWrite.bind(this)
+      write: this.onWrite.bind(this)
     })
 
     this.readable = output.readable

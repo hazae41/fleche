@@ -13,6 +13,10 @@ class Bufferizer implements Transformer<Uint8Array, Buffer> {
   }
 }
 
+export interface FetchParams {
+  stream: Stream<Uint8Array>
+}
+
 /**
  * Fetch adapter for HTTP streams
  * Will wait for response to be available
@@ -21,14 +25,16 @@ class Bufferizer implements Transformer<Uint8Array, Buffer> {
  * @param init 
  * @returns 
  */
-export async function fetch(input: RequestInfo, init: RequestInit = {}, substream: Stream<Uint8Array>) {
-  const request = new Request(input, init)
+export async function fetch(input: RequestInfo, init: RequestInit & FetchParams) {
+  const { stream, ...init2 } = init
+
+  const request = new Request(input, init2)
   const response = new Future<Response>()
 
   const { url, method, signal } = request
   const { host, pathname } = new URL(url)
 
-  const http = new HttpStream(substream, { host, pathname, method, signal })
+  const http = new HttpStream(stream, { host, pathname, method, signal })
 
   function onBody(e: Event) {
     response.ok(new Response(http.readable))
