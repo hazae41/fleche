@@ -1,6 +1,7 @@
 import { Binary } from "@hazae41/binary"
 import { GzDecoder } from "@hazae41/foras"
 import { Stream, TransformByteStream } from "libs/streams/streams.js"
+import { Uint8Arrays } from "libs/uint8arrays/uint8arrays.js"
 
 export type HttpState =
   | HttpNoneState
@@ -47,6 +48,10 @@ export interface HttpGzipCompression {
 }
 
 export interface HttpStreamParams {
+  pathname: string,
+  host: string,
+  method: string,
+  headers?: Headers,
   signal?: AbortSignal
 }
 
@@ -62,36 +67,66 @@ export class HttpStream extends EventTarget {
    */
   constructor(
     readonly substream: Stream<Uint8Array>,
-    readonly params: HttpStreamParams = {}
+    readonly params: HttpStreamParams
   ) {
     super()
 
     const { signal } = params
 
-    const output = new TransformByteStream({ transform: this.onRead.bind(this) })
-    const input = new TransformByteStream({ transform: this.onWrite.bind(this) })
+    const output = new TransformByteStream({
+      transform: this.onRead.bind(this)
+    })
+
+    const input = new TransformByteStream({
+      start: this.onWriteStart.bind(this),
+      transform: this.onWrite.bind(this)
+    })
 
     this.readable = output.readable
     this.writable = input.writable
 
-    substream.readable.pipeTo(output.writable, { signal }).catch(e => { })
-    input.readable.pipeTo(substream.writable, { signal }).catch(e => { })
+    substream.readable.pipeTo(output.writable, { signal }).catch(() => { })
+    input.readable.pipeTo(substream.writable, { signal }).catch(() => { })
   }
 
   i = 0
 
   private async onRead(chunk: Uint8Array, controller: ReadableByteStreamController) {
-    console.log("<-", chunk)
+    try {
+      // console.log("<-", chunk)
 
-    if (this.i++ === 2)
-      this.dispatchEvent(new Event("body"))
+      if (this.i++ === 2)
+        this.dispatchEvent(new Event("body"))
 
-    controller.enqueue(chunk)
+      controller.enqueue(chunk)
+    } catch (e: unknown) {
+      controller.error(e)
+    }
+  }
+
+  private async onWriteStart(controller: ReadableByteStreamController) {
+    try {
+      const { method, pathname, host, headers } = this.params
+
+      let head = ``
+      head += `${method} ${pathname} HTTP/1.1\r\n`
+      head += `Host: ${host}\r\n`
+      head += `Transfer-Encoding: chunked\r\n`
+      head += `Accept-Encoding: gzip\r\n`
+      headers?.forEach((v, k) => head += `${k}: ${v}\r\n`)
+      head += `\r\n`
+
+      controller.enqueue(Uint8Arrays.fromUtf8(head))
+    } catch (e: unknown) {
+      controller.error(e)
+    }
   }
 
   private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
-    console.log("->", chunk)
-
-    controller.enqueue(chunk)
+    try {
+      controller.enqueue(chunk)
+    } catch (e: unknown) {
+      controller.error(e)
+    }
   }
 }

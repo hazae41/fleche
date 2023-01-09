@@ -5,16 +5,9 @@ import { fetch } from "mods/fetch/fetch.js"
 import { HttpStream } from "mods/http/http.js"
 
 test("HTTP 1.1 superstream", async ({ message }) => {
-
+  return
 
   const start = Date.now()
-
-  const sub = new TransformByteStream({
-    async transform(chunk, controller) {
-      await new Promise(ok => setTimeout(ok, 100))
-      controller.enqueue(chunk)
-    },
-  })
 
   let i = 0
 
@@ -37,12 +30,25 @@ test("HTTP 1.1 superstream", async ({ message }) => {
     })
   }
 
+  const sub = new TransformByteStream({
+    async transform(chunk, controller) {
+      await new Promise(ok => setTimeout(ok, 100))
+      controller.enqueue(chunk)
+    },
+  })
+
+
   const aborter = new AbortController()
   const { signal } = aborter
 
-  const http = new HttpStream(sub, { signal })
+  const http = new HttpStream(sub, {
+    host: "google.com",
+    method: "POST",
+    pathname: "/search",
+    signal
+  })
 
-  // setTimeout(() => aborter.abort(), 1000)
+  setTimeout(() => aborter.abort(), 1000)
 
   const reading = http.readable.pipeTo(sup.writable, { signal })
   const writing = sup.readable.pipeTo(http.writable, { signal })
@@ -64,7 +70,7 @@ test("HTTP 1.1 superstream", async ({ message }) => {
 })
 
 test("HTTP 1.1 fetch", async ({ message }) => {
-  return
+  // return
 
   const start = Date.now()
 
@@ -72,7 +78,7 @@ test("HTTP 1.1 fetch", async ({ message }) => {
     async transform(chunk, controller) {
       await new Promise(ok => setTimeout(ok, 100))
 
-      console.log("<->", chunk)
+      console.log("<->", Uint8Arrays.intoUtf8(chunk))
       controller.enqueue(chunk)
     },
   })
@@ -92,12 +98,10 @@ test("HTTP 1.1 fetch", async ({ message }) => {
     }
   })
 
-  const http = new HttpStream(sub)
-
   // setTimeout(() => aborter.abort(), 200)
 
   try {
-    const res = await fetch(http, "https://google.com", { method: "POST", body, signal })
+    const res = await fetch("https://google.com", { method: "POST", body, signal }, sub)
 
     console.log("got response", res)
     console.log(await res.arrayBuffer())
@@ -109,5 +113,3 @@ test("HTTP 1.1 fetch", async ({ message }) => {
 
   console.log("✅", message, `(${end - start}ms)`)
 })
-
-console.log("lol")

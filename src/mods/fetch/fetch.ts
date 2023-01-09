@@ -1,5 +1,6 @@
 import { Future } from "libs/futures/future.js"
-import { TransformController } from "libs/streams/streams.js"
+import { Stream, TransformController } from "libs/streams/streams.js"
+import { HttpStream } from "mods/http/http.js"
 
 export interface IHttpStream extends EventTarget {
   readable: ReadableStream<Uint8Array>
@@ -20,30 +21,33 @@ class Bufferizer implements Transformer<Uint8Array, Buffer> {
  * @param init 
  * @returns 
  */
-export async function fetch(stream: IHttpStream, input: RequestInfo, init?: RequestInit) {
+export async function fetch(input: RequestInfo, init: RequestInit = {}, substream: Stream<Uint8Array>) {
   const request = new Request(input, init)
   const response = new Future<Response>()
 
-  const { signal } = request
+  const { url, method, signal } = request
+  const { host, pathname } = new URL(url)
+
+  const http = new HttpStream(substream, { host, pathname, method, signal })
 
   function onBody(e: Event) {
-    response.ok(new Response(stream.readable))
+    response.ok(new Response(http.readable))
   }
 
   try {
-    stream.addEventListener("body", onBody, { passive: true })
+    http.addEventListener("body", onBody, { passive: true })
     signal.addEventListener("abort", response.err, { passive: true })
 
     response.promise.catch(() => { })
 
     if (request.body)
-      await request.body.pipeTo(stream.writable, { signal })
+      await request.body.pipeTo(http.writable, { signal })
     else
-      await stream.writable.close()
+      await http.writable.close()
 
     return await response.promise
   } finally {
-    stream.removeEventListener("body", onBody)
+    http.removeEventListener("body", onBody)
     signal.removeEventListener("abort", response.err)
   }
 }

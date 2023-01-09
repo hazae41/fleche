@@ -17,6 +17,7 @@ This is experimental software in early development
 - Zero-copy reading and writing
 - Transport agnostic (WebSocket, Tor, TLS)
 - WebStreams backpressure
+- WebAssembly compression
 - AbortSignal cancellation
 - Compatible with fetch
 - HTTP 1.1
