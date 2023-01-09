@@ -25,3 +25,18 @@ This is experimental software in early development
 ### [Upcoming Features](https://github.com/sponsors/hazae41)
 - More HTTP 1.1 features
 - HTTP 2, HTTP 3 (QUIC)
+
+### Usage
+
+```tsx
+import { fetch } from "@hazae41/fleche"
+
+function example(stream: ReadableWritablePair<Uint8Array>) {
+  const res = await fetch("https://example.com", { stream })
+
+  if (!res.ok)
+    throw new Error(await res.text())
+
+  return await res.json()
+}
+```
