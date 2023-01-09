@@ -22,7 +22,7 @@ test("WebSocketStream", async () => {
 
   const stream = new WebSocketStream(ws)
 
-  const res = await fetch("https://google.com", { stream })
+  const res = await fetch("https://webhook.site/d4ff9617-e29b-4b85-8443-6fcf1a2048ec", { stream })
 
   console.log("response", res)
   console.log(await res.text())

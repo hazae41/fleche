@@ -18,7 +18,7 @@ async function onconn(conn: Deno.Conn) {
     try {
       const { socket, response } = Deno.upgradeWebSocket(request);
 
-      const target = await Deno.connect({ hostname: "google.com", port: 80, transport: "tcp" })
+      const target = await Deno.connect({ hostname: "webhook.site", port: 80, transport: "tcp" })
 
       socket.onmessage = async e => {
         try {

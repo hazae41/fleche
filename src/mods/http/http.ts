@@ -1,6 +1,6 @@
 import { Binary } from "@hazae41/binary"
 import { GzDecoder } from "@hazae41/foras"
-import { ByteStream, Stream } from "libs/streams/streams.js"
+import { ByteStream } from "libs/streams/streams.js"
 import { Uint8Arrays } from "libs/uint8arrays/uint8arrays.js"
 
 export type HttpState =
@@ -63,10 +63,10 @@ export class HttpStream extends EventTarget {
 
   /**
    * Create a new HTTP 1.1 stream
-   * @param substream substream
+   * @param stream substream
    */
   constructor(
-    readonly substream: Stream<Uint8Array>,
+    readonly stream: ReadableWritablePair<Uint8Array>,
     readonly params: HttpStreamParams
   ) {
     super()
@@ -87,8 +87,8 @@ export class HttpStream extends EventTarget {
     this.readable = output.readable
     this.writable = input.writable
 
-    substream.readable.pipeTo(output.writable, { signal }).catch(() => { })
-    input.readable.pipeTo(substream.writable, { signal }).catch(() => { })
+    stream.readable.pipeTo(output.writable, { signal }).catch(() => { })
+    input.readable.pipeTo(stream.writable, { signal }).catch(() => { })
   }
 
   i = 0

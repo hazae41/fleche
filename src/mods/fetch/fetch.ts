@@ -1,5 +1,4 @@
 import { Future } from "libs/futures/future.js"
-import { Stream, TransformController } from "libs/streams/streams.js"
 import { HttpStream } from "mods/http/http.js"
 
 export interface IHttpStream extends EventTarget {
@@ -7,14 +6,8 @@ export interface IHttpStream extends EventTarget {
   writable: WritableStream<Uint8Array>
 }
 
-class Bufferizer implements Transformer<Uint8Array, Buffer> {
-  transform(array: Uint8Array, controller: TransformController<Buffer>) {
-    controller.enqueue(Buffer.from(array.buffer))
-  }
-}
-
 export interface FetchParams {
-  stream: Stream<Uint8Array>
+  stream: ReadableWritablePair<Uint8Array>
 }
 
 /**
