@@ -1,6 +1,6 @@
 import { Binary } from "@hazae41/binary"
 import { GzDecoder } from "@hazae41/foras"
-import { Stream, Streams, Writer } from "libs/streams/streams.js"
+import { Stream, TransformByteStream } from "libs/streams/streams.js"
 
 export type HttpState =
   | HttpNoneState
@@ -46,95 +46,52 @@ export interface HttpGzipCompression {
   decoder: GzDecoder
 }
 
-export class HttpStream extends EventTarget {
-  private input = new TransformStream<Buffer, Buffer>()
-  private output = new TransformStream<Buffer, Buffer>()
+export interface HttpStreamParams {
+  signal?: AbortSignal
+}
 
+export class HttpStream extends EventTarget {
   private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(10 * 1024) }
 
-  readonly aborter = new AbortController()
-
-  readonly reading: Promise<void>
-  readonly writing: Promise<void>
+  readonly readable: ReadableStream<Uint8Array>
+  readonly writable: WritableStream<Uint8Array>
 
   /**
    * Create a new HTTP 1.1 stream
    * @param substream substream
    */
   constructor(
-    readonly substream: Stream<Buffer>
+    readonly substream: Stream<Uint8Array>,
+    readonly params: HttpStreamParams = {}
   ) {
     super()
 
-    this.reading = this.read()
-    this.writing = this.write()
+    const { signal } = params
+
+    const output = new TransformByteStream({ transform: this.onRead.bind(this) })
+    const input = new TransformByteStream({ transform: this.onWrite.bind(this) })
+
+    this.readable = output.readable
+    this.writable = input.writable
+
+    substream.readable.pipeTo(output.writable, { signal }).catch(e => { })
+    input.readable.pipeTo(substream.writable, { signal }).catch(e => { })
   }
 
-  get writable() {
-    return this.input.writable
-  }
+  i = 0
 
-  get readable() {
-    return this.output.readable
-  }
+  private async onRead(chunk: Uint8Array, controller: ReadableByteStreamController) {
+    console.log("<-", chunk)
 
-  async read() {
-    const { signal } = this.aborter
-
-    const reader = this.substream.readable.getReader()
-    const writer = this.output.writable.getWriter()
-
-    try {
-      console.log("reading...")
-      for await (const value of Streams.read(reader, signal))
-        await this.onRead(writer, value)
-      await writer.close()
-    } catch (e: unknown) {
-      await reader.cancel(e)
-      await writer.abort(e)
-    } finally {
-      reader.releaseLock()
-      writer.releaseLock()
-    }
-  }
-
-  body = false
-
-  private async onRead(writer: Writer<Buffer>, value: Buffer) {
-    console.log("read", value)
-
-    if (!this.body) {
+    if (this.i++ === 2)
       this.dispatchEvent(new Event("body"))
-      this.body = true
-    } else {
-      await writer.write(value)
-    }
 
-    await new Promise(ok => setTimeout(ok, 100))
+    controller.enqueue(chunk)
   }
 
-  async write() {
-    const { signal } = this.aborter
+  private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
+    console.log("->", chunk)
 
-    const reader = this.input.readable.getReader()
-    const writer = this.substream.writable.getWriter()
-
-    try {
-      for await (const value of Streams.read(reader, signal))
-        await this.onWrite(writer, value)
-      await writer.close()
-    } catch (e: unknown) {
-      await reader.cancel(e)
-      await writer.abort(e)
-    } finally {
-      reader.releaseLock()
-      writer.releaseLock()
-    }
-  }
-
-  private async onWrite(writer: Writer<Buffer>, value: Buffer) {
-    console.log("write", value)
-    await writer.write(value)
-    await new Promise(ok => setTimeout(ok, 100))
+    controller.enqueue(chunk)
   }
 }

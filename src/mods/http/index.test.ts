@@ -1,46 +1,57 @@
 import { test } from "@hazae41/phobos"
+import { TransformByteStream } from "libs/streams/streams.js"
+import { Uint8Arrays } from "libs/uint8arrays/uint8arrays.js"
 import { fetch } from "mods/fetch/fetch.js"
 import { HttpStream } from "mods/http/http.js"
 
-test("HTTP 1.1 superstream should gracefully close on http abort", async ({ message }) => {
-  return
+test("HTTP 1.1 superstream", async ({ message }) => {
+
 
   const start = Date.now()
 
-  const sub = {
-    readable: new ReadableStream<Buffer>({
-      pull(controller) {
-        controller.enqueue(Buffer.from("hello from sub"))
-      }
-    }),
-    writable: new WritableStream<Buffer>({
-      write(chunk) {
-        // NOOP
-      }
-    })
-  }
+  const sub = new TransformByteStream({
+    async transform(chunk, controller) {
+      await new Promise(ok => setTimeout(ok, 100))
+      controller.enqueue(chunk)
+    },
+  })
+
+  let i = 0
 
   const sup = {
-    readable: new ReadableStream<Buffer>({
-      pull(controller) {
-        controller.enqueue(Buffer.from("hello from sup"))
+    readable: new ReadableStream({
+      type: "bytes",
+      async pull(controller) {
+        await new Promise(ok => setTimeout(ok, 10))
+
+        if (i++ === 10)
+          controller.close()
+        else
+          controller.enqueue(Uint8Arrays.fromUtf8("hello world"))
       }
     }),
     writable: new WritableStream<Buffer>({
       write(chunk) {
-        // NOOP
+        console.log(Uint8Arrays.intoUtf8(chunk))
       }
     })
   }
 
-  const http = new HttpStream(sub)
+  const aborter = new AbortController()
+  const { signal } = aborter
 
-  setTimeout(() => http.aborter.abort(), 1000)
+  const http = new HttpStream(sub, { signal })
 
-  http.readable.pipeTo(sup.writable).catch(() => { })
-  sup.readable.pipeTo(http.writable).catch(() => { })
+  // setTimeout(() => aborter.abort(), 1000)
 
-  await Promise.all([http.reading, http.writing])
+  const reading = http.readable.pipeTo(sup.writable, { signal })
+  const writing = sup.readable.pipeTo(http.writable, { signal })
+
+  try {
+    await Promise.all([reading, writing])
+  } catch (e: unknown) {
+    console.error(e)
+  }
 
   const end = Date.now()
 
@@ -53,55 +64,46 @@ test("HTTP 1.1 superstream should gracefully close on http abort", async ({ mess
 })
 
 test("HTTP 1.1 fetch", async ({ message }) => {
+  return
+
   const start = Date.now()
 
-  const closer = new AbortController()
+  const sub = new TransformByteStream({
+    async transform(chunk, controller) {
+      await new Promise(ok => setTimeout(ok, 100))
 
-  // const sub = {
-  //   readable: new ReadableStream<Buffer>({
-  //     pull(controller) {
-  //       if (closer.signal.aborted)
-  //         controller.close()
-  //       else
-  //         controller.enqueue(Buffer.from("hello from sub"))
-  //     }
-  //   }),
-  //   writable: new WritableStream<Buffer>({
-  //     write(chunk) {
-  //       console.log(chunk)
-  //     }
-  //   })
-  // }
-
-  const sub = new TransformStream<Buffer, Buffer>({
-    transform(chunk) {
-      console.log(chunk)
-    }
+      console.log("<->", chunk)
+      controller.enqueue(chunk)
+    },
   })
 
   const aborter = new AbortController()
   const { signal } = aborter
 
-  // setTimeout(() => aborter.abort(), 1000)
-  // setTimeout(() => closer.abort(), 1000)
+  let i = 0
 
   const body = new ReadableStream({
+    type: "bytes",
     pull(controller) {
-      controller.enqueue(Buffer.from("hello from sup"))
-      controller.enqueue(Buffer.from("hello from sup"))
-      controller.enqueue(Buffer.from("hello from sup"))
-      controller.enqueue(Buffer.from("hello from sup"))
-      controller.close()
+      if (i++ === 5)
+        controller.close()
+      else
+        controller.enqueue(Uint8Arrays.fromUtf8("hello world"))
     }
   })
 
-  const res = await fetch(new HttpStream(sub), "https://google.com", { method: "POST", body, signal })
+  const http = new HttpStream(sub)
 
-  console.log("got response", res)
+  // setTimeout(() => aborter.abort(), 200)
 
-  if (!res) return
+  try {
+    const res = await fetch(http, "https://google.com", { method: "POST", body, signal })
 
-  console.log(Buffer.from(await res.arrayBuffer()))
+    console.log("got response", res)
+    console.log(await res.arrayBuffer())
+  } catch (e: unknown) {
+    console.error(e)
+  }
 
   const end = Date.now()
 

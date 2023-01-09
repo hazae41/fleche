@@ -23,3 +23,45 @@ export namespace Streams {
   }
 
 }
+
+export interface ByteTransformer {
+  start?: (controller: ReadableByteStreamController) => Promise<void>
+  transform?: (chunk: Uint8Array, controller: ReadableByteStreamController) => void | Promise<void>
+}
+
+export class TransformByteStream {
+  readonly readable: ReadableStream<Uint8Array>
+  readonly writable: WritableStream<Uint8Array>
+
+  constructor(transformer: ByteTransformer) {
+    let reader: ReadableByteStreamController
+    let writer: WritableStreamDefaultController
+
+    this.readable = new ReadableStream({
+      type: "bytes",
+      async start(controller) {
+        reader = controller
+
+        await transformer.start?.(controller)
+      },
+      cancel(reason) {
+        writer.error(reason)
+      }
+    })
+
+    this.writable = new WritableStream<Uint8Array>({
+      start(controller) {
+        writer = controller
+      },
+      async write(chunk, controller) {
+        await transformer.transform?.(chunk, reader)
+      },
+      abort(reason) {
+        reader.error(reason)
+      },
+      close() {
+        reader.close()
+      }
+    })
+  }
+}
