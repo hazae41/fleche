@@ -15,7 +15,7 @@ This is experimental software in early development
 ### Current features
 - 100% TypeScript and ESM
 - Zero-copy reading and writing
-- Transport agnostic (Tor, TLS)
+- Transport agnostic (WebSocket, Tor, TLS)
 - WebStreams backpressure
 - AbortSignal cancellation
 - Compatible with fetch
