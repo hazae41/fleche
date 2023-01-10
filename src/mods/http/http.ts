@@ -92,7 +92,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onRead(chunk: Uint8Array, controller: TransformByteStreamController) {
-    console.debug("<-", chunk)
+    // console.debug("<-", chunk)
 
     if (this._state.type === "none") {
       const result = await this.onReadNone(chunk, controller)
@@ -271,7 +271,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWriteStart(controller: TransformByteStreamController) {
-    console.debug("-> start")
+    // console.debug("-> start")
 
     const { method, pathname, host, headers } = this.params
 
@@ -287,7 +287,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWrite(chunk: Uint8Array, controller: TransformByteStreamController) {
-    console.debug("->", chunk)
+    // console.debug("->", chunk)
 
     const text = new TextDecoder().decode(chunk)
     const length = text.length.toString(16)
@@ -297,7 +297,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWriteFlush(controller: TransformByteStreamController) {
-    console.debug("-> flush")
+    // console.debug("-> flush")
 
     controller.enqueue(Bytes.fromUtf8(`0\r\n\r\n\r\n`))
   }
