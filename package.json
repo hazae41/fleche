@@ -22,7 +22,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@hazae41/binary": "^1.0.9",
+    "@hazae41/binary": "^1.1.2",
     "@hazae41/foras": "^2.0.3",
     "tslib": "^2.4.1"
   },

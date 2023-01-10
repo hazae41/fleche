@@ -36,22 +36,20 @@ async function ready(socket: WebSocket, hostname: string) {
 test("WebSocketStream", async () => {
   const socket = new WebSocket("ws://127.0.0.1:8080")
 
-  await ready(socket, "postman-echo.com")
+  /**
+   * Wait TCP/TLS over WebSocket to given hostname
+   */
+  await ready(socket, "orbitum.space")
 
   const stream = new WebSocketStream(socket)
 
-  // const body = new ReadableStream({
-  //   async pull(controller) {
-  //     throw new Error("lol")
-  //   },
-  // })
+  // const body = JSON.stringify({ hello: "world" })
+  // const headers = new Headers({ "content-type": "application/json" })
 
-  const body = JSON.stringify({ hello: "world" })
-  const headers = new Headers({ "content-type": "application/json" })
-  const res = await fetch("https://postman-echo.com/post", { method: "POST", body, headers, stream })
+  const res = await fetch("https://orbitum.space", { method: "GET", stream })
 
   console.log("response", res)
-  console.log(await res.json())
+  console.log(await res.text())
 
   socket.close()
 })
