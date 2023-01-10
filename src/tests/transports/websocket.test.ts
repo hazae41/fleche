@@ -1,8 +1,8 @@
 import { test } from "@hazae41/phobos"
 import { Future } from "libs/futures/future.js"
-import { WebSocketStream } from "libs/transports/websocket.js"
 import { fetch } from "mods/fetch/fetch.js"
 import { Event, MessageEvent, WebSocket } from "ws"
+import { WebSocketStream } from "./websocket.js"
 
 async function ready(socket: WebSocket, hostname: string) {
   socket.binaryType = "arraybuffer"
@@ -51,5 +51,5 @@ test("WebSocketStream", async () => {
   console.log("response", res)
   console.log(await res.text())
 
-  socket.close()
+  // socket.close()
 })

@@ -12,6 +12,10 @@ async function read(reader: Deno.Reader) {
   if (n) return p.subarray(0, n)
 }
 
+function decode(bytes: Uint8Array) {
+  return new TextDecoder().decode(bytes)
+}
+
 async function onconn(conn: Deno.Conn) {
   const http = Deno.serveHttp(conn)
 
@@ -52,7 +56,7 @@ async function onsocket(socket: WebSocket) {
   socket.addEventListener("message", async e => {
     try {
       const buffer = new Uint8Array(e.data)
-      console.debug("->", buffer)
+      console.debug("->", decode(buffer))
       await writeAll(target, buffer)
     } catch (_: unknown) {
       socket.close()
@@ -69,7 +73,7 @@ async function onsocket(socket: WebSocket) {
         return
       }
 
-      console.debug("<-", output)
+      console.debug("<-", decode(output))
       socket.send(output)
     } catch (_: unknown) {
       socket.close()

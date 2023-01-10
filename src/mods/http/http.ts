@@ -1,7 +1,7 @@
 import { Binary } from "@hazae41/binary"
 import { Foras, GzDecoder } from "@hazae41/foras"
 import { Bytes } from "libs/bytes/bytes.js"
-import { ByteStreamPipe } from "libs/streams/bytes.js"
+import { TransformByteStream, TransformByteStreamController } from "libs/streams/bytes.js"
 import { Strings } from "libs/strings/strings.js"
 
 export type HttpState =
@@ -74,26 +74,25 @@ export class HttpStream extends EventTarget {
 
     const { signal } = params
 
-    const output = new ByteStreamPipe({
-      write: this.onRead.bind(this),
-      close: this.onReadEnd.bind(this),
+    const read = new TransformByteStream({
+      transform: this.onRead.bind(this),
     })
 
-    const input = new ByteStreamPipe({
+    const write = new TransformByteStream({
       start: this.onWriteStart.bind(this),
-      write: this.onWrite.bind(this),
-      close: this.onWriteClose.bind(this),
+      transform: this.onWrite.bind(this),
+      flush: this.onWriteFlush.bind(this),
     })
 
-    this.readable = output.readable
-    this.writable = input.writable
+    this.readable = read.readable
+    this.writable = write.writable
 
-    stream.readable.pipeTo(output.writable, { signal }).catch(() => { })
-    input.readable.pipeTo(stream.writable, { signal }).catch(() => { })
+    stream.readable.pipeTo(read.writable, { signal }).catch(() => { })
+    write.readable.pipeTo(stream.writable, { signal }).catch(() => { })
   }
 
-  private async onRead(chunk: Uint8Array, controller: ReadableByteStreamController) {
-    // console.debug("<-", chunk)
+  private async onRead(chunk: Uint8Array, controller: TransformByteStreamController) {
+    console.debug("<-", chunk)
 
     if (this._state.type === "none") {
       const result = await this.onReadNone(chunk, controller)
@@ -145,7 +144,7 @@ export class HttpStream extends EventTarget {
     throw new Error(`Unsupported compression ${type}`)
   }
 
-  private async onReadNone(chunk: Uint8Array, controller: ReadableByteStreamController) {
+  private async onReadNone(chunk: Uint8Array, controller: TransformByteStreamController) {
     if (this._state.type !== "none")
       throw new Error("Invalid state")
 
@@ -175,7 +174,7 @@ export class HttpStream extends EventTarget {
     return body
   }
 
-  private async onReadLenghted(chunk: Uint8Array, controller: ReadableByteStreamController) {
+  private async onReadLenghted(chunk: Uint8Array, controller: TransformByteStreamController) {
     if (this._state.type !== "headed")
       throw new Error("Invalid state")
     if (this._state.transfer.type !== "lengthed")
@@ -208,11 +207,11 @@ export class HttpStream extends EventTarget {
         controller.enqueue(bfchunk)
       }
 
-      controller.close()
+      controller.terminate()
     }
   }
 
-  private async onReadChunked(chunk: Uint8Array, controller: ReadableByteStreamController) {
+  private async onReadChunked(chunk: Uint8Array, controller: TransformByteStreamController) {
     if (this._state.type !== "headed")
       throw new Error("Invalid state")
     if (this._state.transfer.type !== "chunked")
@@ -242,7 +241,7 @@ export class HttpStream extends EventTarget {
           if (fchunk.length) controller.enqueue(fchunk)
         }
 
-        controller.close()
+        controller.terminate()
         return
       }
 
@@ -271,12 +270,8 @@ export class HttpStream extends EventTarget {
     }
   }
 
-  private async onReadEnd(controller: ReadableByteStreamController) {
-    controller.close()
-  }
-
-  private async onWriteStart(controller: ReadableByteStreamController) {
-    // console.debug("-> start")
+  private async onWriteStart(controller: TransformByteStreamController) {
+    console.debug("-> start")
 
     const { method, pathname, host, headers } = this.params
 
@@ -291,8 +286,8 @@ export class HttpStream extends EventTarget {
     controller.enqueue(Bytes.fromUtf8(head))
   }
 
-  private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
-    // console.debug("->", chunk)
+  private async onWrite(chunk: Uint8Array, controller: TransformByteStreamController) {
+    console.debug("->", chunk)
 
     const text = new TextDecoder().decode(chunk)
     const length = text.length.toString(16)
@@ -301,10 +296,9 @@ export class HttpStream extends EventTarget {
     controller.enqueue(Bytes.fromUtf8(line))
   }
 
-  private async onWriteClose(controller: ReadableByteStreamController) {
-    // console.debug("-> close")
+  private async onWriteFlush(controller: TransformByteStreamController) {
+    console.debug("-> flush")
 
     controller.enqueue(Bytes.fromUtf8(`0\r\n\r\n\r\n`))
-    controller.close()
   }
 }

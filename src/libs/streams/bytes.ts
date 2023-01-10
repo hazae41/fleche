@@ -1,42 +1,83 @@
 
-export interface ByteStreamPipeParams {
-  start?: (controller: ReadableByteStreamController) => Promise<void>
-  write?: (chunk: Uint8Array, controller: ReadableByteStreamController) => void | Promise<void>
-  close?: (controller: ReadableByteStreamController) => void | Promise<void>
+export interface TransformByteStreamController {
+  enqueue(chunk: ArrayBufferView): void
+  error(e?: any): void
+  terminate(): void
 }
 
-export class ByteStreamPipe {
+export interface ByteTransformer {
+  start?: (controller: TransformByteStreamController) => Promise<void>
+  transform?: (chunk: Uint8Array, controller: TransformByteStreamController) => void | Promise<void>
+  flush?: (controller: TransformByteStreamController) => void | Promise<void>
+}
+
+export class TransformByteStream {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 
-  constructor(params: ByteStreamPipeParams) {
-    let reader: ReadableByteStreamController
-    let writer: WritableStreamDefaultController
+  constructor(params: ByteTransformer) {
+    let rcontroller: ReadableByteStreamController
+    let wcontroller: WritableStreamDefaultController
+
+    const tcontroller: TransformByteStreamController = {
+      enqueue(chunk: ArrayBufferView) {
+        rcontroller.enqueue(chunk)
+      },
+      error(e?: any) {
+        rcontroller.error(e)
+        wcontroller.error(e)
+      },
+      terminate() {
+        rcontroller.close()
+        wcontroller.error()
+      }
+    }
 
     this.readable = new ReadableStream({
       type: "bytes",
-      async start(controller) {
-        reader = controller
 
-        await params.start?.(controller)
+      async start(controller) {
+        rcontroller = controller
+
+        if (!wcontroller) return
+
+        await params.start?.(tcontroller)
       },
+
       async cancel(reason) {
-        writer.error(reason)
+        if (!wcontroller) return
+
+        wcontroller.error(reason)
       }
     })
 
     this.writable = new WritableStream<Uint8Array>({
       async start(controller) {
-        writer = controller
+        wcontroller = controller
+
+        if (!rcontroller) return
+
+        await params.start?.(tcontroller)
       },
-      async write(chunk, controller) {
-        await params.write?.(chunk, reader)
+
+      async write(chunk) {
+        if (!rcontroller) return
+
+        await params.transform?.(chunk, tcontroller)
       },
+
       async abort(reason) {
-        reader.error(reason)
+        if (!rcontroller) return
+
+        rcontroller.error(reason)
       },
+
       async close() {
-        await params.close?.(reader)
+        if (!rcontroller) return
+
+        await params.flush?.(tcontroller)
+
+        rcontroller.close()
       }
     })
   }
