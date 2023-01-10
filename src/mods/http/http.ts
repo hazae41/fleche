@@ -1,7 +1,8 @@
 import { Binary } from "@hazae41/binary"
-import { GzDecoder } from "@hazae41/foras"
-import { ByteStream } from "libs/streams/streams.js"
-import { Uint8Arrays } from "libs/uint8arrays/uint8arrays.js"
+import { Foras, GzDecoder } from "@hazae41/foras"
+import { Bytes } from "libs/bytes/bytes.js"
+import { ByteStreamPipe } from "libs/streams/bytes.js"
+import { Strings } from "libs/strings/strings.js"
 
 export type HttpState =
   | HttpNoneState
@@ -73,12 +74,12 @@ export class HttpStream extends EventTarget {
 
     const { signal } = params
 
-    const output = new ByteStream({
+    const output = new ByteStreamPipe({
       write: this.onRead.bind(this),
       close: this.onReadEnd.bind(this),
     })
 
-    const input = new ByteStream({
+    const input = new ByteStreamPipe({
       start: this.onWriteStart.bind(this),
       write: this.onWrite.bind(this),
       close: this.onWriteClose.bind(this),
@@ -91,18 +92,182 @@ export class HttpStream extends EventTarget {
     input.readable.pipeTo(stream.writable, { signal }).catch(() => { })
   }
 
-  i = 0
-
   private async onRead(chunk: Uint8Array, controller: ReadableByteStreamController) {
-    try {
-      // console.log("<-", chunk)
+    console.log("<-", chunk)
 
-      if (this.i++ === 0)
-        this.dispatchEvent(new Event("body"))
+    if (this._state.type === "none") {
+      const result = await this.onReadNone(chunk, controller)
 
+      if (result === undefined)
+        return
+      chunk = result
+    }
+
+    if (this._state.type !== "headed")
+      throw new Error("Invalid state")
+
+    if (this._state.transfer.type === "lengthed")
+      return await this.onReadLenghted(chunk, controller)
+    if (this._state.transfer.type === "chunked")
+      return await this.onReadChunked(chunk, controller)
+
+    throw new Error("Invalid state")
+  }
+
+  private getTransferFromHeaders(headers: Headers): HttpTransfer {
+    const type = headers.get("transfer-encoding")
+
+    if (type === null) {
+      const length = Number(headers.get("content-length"))
+      return { type: "lengthed", offset: 0, length }
+    }
+
+    if (type === "chunked") {
+      const buffer = Binary.allocUnsafe(10 * 1024)
+      return { type, buffer }
+    }
+
+    throw new Error(`Unsupported transfer ${type}`)
+  }
+
+  private async getCompressionFromHeaders(headers: Headers) {
+    const type = headers.get("content-encoding")
+
+    if (type === null)
+      return { type: "none" } as HttpCompression
+
+    if (type === "gzip") {
+      await Foras.initBundledOnce()
+      const decoder = new GzDecoder()
+      return { type, decoder } as HttpCompression
+    }
+
+    throw new Error(`Unsupported compression ${type}`)
+  }
+
+  private async onReadNone(chunk: Uint8Array, controller: ReadableByteStreamController) {
+    if (this._state.type !== "none")
+      throw new Error("Invalid state")
+
+    const { buffer } = this._state
+
+    buffer.write(chunk)
+
+    const split = buffer.buffer.indexOf("\r\n\r\n")
+
+    if (split === -1) return
+
+    const head = buffer.buffer.subarray(0, split)
+    const body = buffer.buffer.subarray(split + "\r\n\r\n".length, buffer.offset)
+
+    const [info, ...rawHeaders] = head.toString().split("\r\n")
+    const [version, statusString, statusText] = info.split(" ")
+
+    const status = Number(statusString)
+    const headers = new Headers(rawHeaders.map(it => Strings.splitOnFirst(it, ": ")))
+    this.dispatchEvent(new MessageEvent("body", { data: { headers, status, statusText } }))
+
+    const transfer = this.getTransferFromHeaders(headers)
+    const compression = await this.getCompressionFromHeaders(headers)
+
+    this._state = { type: "headed", version, transfer, compression }
+
+    return body
+  }
+
+  private async onReadLenghted(chunk: Uint8Array, controller: ReadableByteStreamController) {
+    if (this._state.type !== "headed")
+      throw new Error("Invalid state")
+    if (this._state.transfer.type !== "lengthed")
+      throw new Error("Invalid state")
+
+    const { transfer, compression } = this._state
+
+    transfer.offset += chunk.length
+
+    if (transfer.offset > transfer.length)
+      throw new Error(`Length > Content-Length`)
+
+    if (compression.type === "none")
       controller.enqueue(chunk)
-    } catch (e: unknown) {
-      controller.error(e)
+
+    if (compression.type === "gzip") {
+      compression.decoder.write(chunk)
+      compression.decoder.flush()
+
+      const dchunk = compression.decoder.read()
+      const bdchunk = Buffer.from(dchunk.buffer)
+      controller.enqueue(bdchunk)
+    }
+
+    if (transfer.offset === transfer.length) {
+
+      if (compression.type === "gzip") {
+        const fchunk = compression.decoder.finish()
+        const bfchunk = Buffer.from(fchunk.buffer)
+        controller.enqueue(bfchunk)
+      }
+
+      controller.close()
+    }
+  }
+
+  private async onReadChunked(chunk: Uint8Array, controller: ReadableByteStreamController) {
+    if (this._state.type !== "headed")
+      throw new Error("Invalid state")
+    if (this._state.transfer.type !== "chunked")
+      throw new Error("Invalid state")
+
+    const { transfer, compression } = this._state
+    const { buffer } = transfer
+
+    buffer.write(chunk)
+
+    let slice = buffer.buffer.subarray(0, buffer.offset)
+
+    while (slice.length) {
+      const index = slice.indexOf("\r\n")
+
+      // [...] => partial header => wait
+      if (index === -1) return
+
+      // [length]\r\n(...) => full header => split it
+      const length = parseInt(slice.subarray(0, index).toString(), 16)
+      const rest = slice.subarray(index + 2)
+
+      if (length === 0) {
+
+        if (compression.type === "gzip") {
+          const fchunk = compression.decoder.finish()
+          if (fchunk.length) controller.enqueue(fchunk)
+        }
+
+        controller.close()
+        return
+      }
+
+      // len(...) < length + len(\r\n) => partial chunk => wait
+      if (rest.length < length + 2) break
+
+      // ([length]\r\n)[chunk]\r\n(...) => full chunk => split it
+      const chunk2 = rest.subarray(0, length)
+      const rest2 = rest.subarray(length + 2)
+
+      if (compression.type === "none")
+        controller.enqueue(chunk2)
+
+      if (compression.type === "gzip") {
+        compression.decoder.write(chunk2)
+        compression.decoder.flush()
+
+        const dchunk2 = compression.decoder.read()
+        if (dchunk2.length) controller.enqueue(dchunk2)
+      }
+
+      buffer.offset = 0
+      buffer.write(rest2)
+
+      slice = buffer.buffer.subarray(0, buffer.offset)
     }
   }
 
@@ -111,41 +276,37 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWriteStart(controller: ReadableByteStreamController) {
-    try {
-      const { method, pathname, host, headers } = this.params
+    console.log("-> start")
 
-      let head = ``
-      head += `${method} ${pathname} HTTP/1.1\r\n`
-      head += `Host: ${host}\r\n`
-      head += `Transfer-Encoding: chunked\r\n`
-      head += `Accept-Encoding: gzip\r\n`
-      headers?.forEach((v, k) => head += `${k}: ${v}\r\n`)
-      head += `\r\n`
+    const { method, pathname, host, headers } = this.params
 
-      console.log(head)
+    let head = ``
+    head += `${method} ${pathname} HTTP/1.1\r\n`
+    head += `Host: ${host}\r\n`
+    head += `Transfer-Encoding: chunked\r\n`
+    head += `Accept-Encoding: gzip\r\n`
+    headers?.forEach((v, k) => head += `${k}: ${v}\r\n`)
+    head += `\r\n`
 
-      controller.enqueue(Uint8Arrays.fromUtf8(head))
-    } catch (e: unknown) {
-      controller.error(e)
-    }
+    console.log(head)
+
+    controller.enqueue(Bytes.fromUtf8(head))
   }
 
   private async onWrite(chunk: Uint8Array, controller: ReadableByteStreamController) {
-    try {
-      console.log("->", Uint8Arrays.intoUtf8(chunk))
+    console.log("->", Bytes.toUtf8(chunk))
 
-      controller.enqueue(chunk)
-    } catch (e: unknown) {
-      controller.error(e)
-    }
+    const text = new TextDecoder().decode(chunk)
+    const length = text.length.toString(16)
+    const line = `${length}\r\n${text}\r\n`
+
+    controller.enqueue(Bytes.fromUtf8(line))
   }
 
   private async onWriteClose(controller: ReadableByteStreamController) {
-    try {
-      controller.enqueue(Uint8Arrays.fromUtf8(`0\r\n\r\n\r\n`))
-      controller.close()
-    } catch (e: unknown) {
-      controller.error(e)
-    }
+    console.log("-> close")
+
+    controller.enqueue(Bytes.fromUtf8(`0\r\n\r\n\r\n`))
+    controller.close()
   }
 }

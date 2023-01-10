@@ -24,19 +24,18 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   const http = new HttpStream(stream, { host, pathname, method, signal })
 
   function onBody(e: Event) {
-    response.ok(new Response(http.readable))
+    const msg = e as MessageEvent<ResponseInit>
+    response.ok(new Response(http.readable, msg.data))
   }
 
   try {
     http.addEventListener("body", onBody, { passive: true })
     signal.addEventListener("abort", response.err, { passive: true })
 
-    response.promise.catch(() => { })
-
     if (request.body)
-      await request.body.pipeTo(http.writable, { signal })
+      request.body.pipeTo(http.writable, { signal }).catch(response.err)
     else
-      await http.writable.close()
+      http.writable.close().catch(response.err)
 
     return await response.promise
   } finally {

@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@hazae41/fleche",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Zero-copy HTTP protocol for the web",
   "homepage": "https://github.com/hazae41/fleche",
   "repository": "github:hazae41/fleche",
@@ -22,7 +22,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@hazae41/binary": "^1.0.8",
+    "@hazae41/binary": "^1.0.9",
     "@hazae41/foras": "^2.0.3",
     "tslib": "^2.4.1"
   },

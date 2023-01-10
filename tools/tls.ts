@@ -1,4 +1,5 @@
 import { writeAll } from "https://deno.land/std@0.157.0/streams/mod.ts";
+import { Future } from "../src/libs/futures/future.ts";
 
 const server = Deno.listen({ port: 8080 })
 
@@ -18,20 +19,7 @@ async function onconn(conn: Deno.Conn) {
     try {
       const { socket, response } = Deno.upgradeWebSocket(request);
 
-      const target = await Deno.connectTls({ hostname: "webhook.site", port: 443 })
-
-      socket.onmessage = async e => {
-        try {
-          const buffer = new Uint8Array(e.data)
-          console.debug("->", buffer)
-          await writeAll(target, buffer)
-        } catch (_: unknown) {
-          socket.close()
-          return
-        }
-      }
-
-      readloop(socket, target)
+      onsocket(socket)
 
       await respondWith(response)
     } catch (_: unknown) {
@@ -40,10 +28,41 @@ async function onconn(conn: Deno.Conn) {
   }
 }
 
-async function readloop(socket: WebSocket, onion: Deno.Conn) {
+async function onsocket(socket: WebSocket) {
+  socket.binaryType = "arraybuffer"
+
+  const hello = new Future<MessageEvent<string>>()
+
+  socket.addEventListener("message", hello.ok)
+  socket.addEventListener("close", hello.err)
+  socket.addEventListener("error", hello.err)
+
+  const message = await hello.promise
+
+  socket.removeEventListener("message", hello.ok)
+  socket.removeEventListener("close", hello.err)
+  socket.removeEventListener("error", hello.err)
+
+  const hostname = message.data
+
+  const target = await Deno.connectTls({ hostname, port: 443 })
+
+  socket.send("hello")
+
+  socket.addEventListener("message", async e => {
+    try {
+      const buffer = new Uint8Array(e.data)
+      console.debug("->", buffer)
+      await writeAll(target, buffer)
+    } catch (_: unknown) {
+      socket.close()
+      return
+    }
+  })
+
   while (true) {
     try {
-      const output = await read(onion)
+      const output = await read(target)
 
       if (!output) {
         socket.close()

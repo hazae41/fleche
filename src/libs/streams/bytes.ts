@@ -1,15 +1,15 @@
 
-export interface ByteStreamParams {
+export interface ByteStreamPipeParams {
   start?: (controller: ReadableByteStreamController) => Promise<void>
   write?: (chunk: Uint8Array, controller: ReadableByteStreamController) => void | Promise<void>
   close?: (controller: ReadableByteStreamController) => void | Promise<void>
 }
 
-export class ByteStream {
+export class ByteStreamPipe {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 
-  constructor(params: ByteStreamParams) {
+  constructor(params: ByteStreamPipeParams) {
     let reader: ReadableByteStreamController
     let writer: WritableStreamDefaultController
 

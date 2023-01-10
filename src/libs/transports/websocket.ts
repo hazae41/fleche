@@ -1,4 +1,5 @@
-import { ByteStream } from "libs/streams/streams.js"
+import { Bytes } from "libs/bytes/bytes.js"
+import { ByteStreamPipe } from "libs/streams/bytes.js"
 import { CloseEvent, ErrorEvent, MessageEvent, WebSocket } from "ws"
 
 export class WebSocketStream {
@@ -11,7 +12,7 @@ export class WebSocketStream {
   ) {
     websocket.binaryType = "arraybuffer"
 
-    const stream = new ByteStream({
+    const stream = new ByteStreamPipe({
       start: this.onStart.bind(this),
       write: this.onWrite.bind(this)
     })
@@ -22,7 +23,7 @@ export class WebSocketStream {
 
   private async onStart(controller: ReadableByteStreamController) {
     const onMessage = (e: MessageEvent) => {
-      controller.enqueue(new Uint8Array(e.data as ArrayBuffer))
+      controller.enqueue(Bytes.fromBuffer(e.data as ArrayBuffer))
     }
 
     const onError = (e: ErrorEvent) => {
