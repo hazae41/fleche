@@ -87,7 +87,7 @@ export class WebSocketStream {
 
       await close.promise
     } finally {
-      this.websocket.addEventListener("close", onClose)
+      this.websocket.removeEventListener("close", onClose)
     }
   }
 }
