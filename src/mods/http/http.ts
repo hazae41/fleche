@@ -102,7 +102,7 @@ export class HttpStream extends EventTarget {
      * Force call to read.readable.transform()
      */
     trashable
-      .pipeTo(trash)
+      .pipeTo(trash, { signal })
       .catch(() => { })
   }
 
