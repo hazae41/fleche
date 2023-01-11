@@ -11,13 +11,6 @@ npm i @hazae41/fleche
 
 [**Node Package 📦**](https://www.npmjs.com/package/@hazae41/fleche)
 
-### DO NOT USE
-
-This is experimental software in early development
-
-1. It has security issues
-2. Things change quickly
-
 ### Current features
 - 100% TypeScript and ESM
 - Zero-copy reading and writing
@@ -28,7 +21,7 @@ This is experimental software in early development
 - Compatible with fetch
 - HTTP 1.1
 
-### [Upcoming Features](https://github.com/sponsors/hazae41)
+### [Upcoming features](https://github.com/sponsors/hazae41)
 - More HTTP 1.1 features
 - Brotli compression
 - HTTP 2, HTTP 3 (QUIC)
