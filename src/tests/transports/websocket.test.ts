@@ -33,6 +33,8 @@ async function ready(socket: WebSocket, hostname: string) {
 }
 
 test("WebSocketStream", async () => {
+  // setTimeout(() => { }, 1000000)
+
   const socket = new WebSocket("ws://127.0.0.1:8080")
 
   /**

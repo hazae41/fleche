@@ -53,15 +53,15 @@ export interface WebSocketSourceParams {
   shouldCloseOnCancel?: boolean
 }
 
-export class WebSocketSource implements UnderlyingByteSource {
-  readonly type = "bytes"
+export class WebSocketSource implements UnderlyingSource<Uint8Array> {
+  // readonly type = "bytes" // Safari
 
   constructor(
     readonly websocket: WebSocket,
     readonly params: WebSocketSourceParams = {}
   ) { }
 
-  async start(controller: ReadableByteStreamController) {
+  async start(controller: ReadableStreamController<Uint8Array>) {
     const onMessage = (e: MessageEvent) => {
       const chunk = new Uint8Array(e.data as ArrayBuffer)
       controller.enqueue(chunk)
