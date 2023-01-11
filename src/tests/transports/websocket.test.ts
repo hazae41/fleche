@@ -40,15 +40,22 @@ test("WebSocketStream", async () => {
    */
   await ready(socket, "orbitum.space")
 
-  const stream = new WebSocketStream(socket)
+  const stream = new WebSocketStream(socket, {
+    shouldCloseOnCancel: true,
+    shouldCloseOnAbort: true,
+    shouldCloseOnClose: true,
+  })
 
-  // const body = JSON.stringify({ hello: "world" })
-  // const headers = new Headers({ "content-type": "application/json" })
+  const body = JSON.stringify({ hello: "world" })
+  const headers = new Headers({ "content-type": "application/json" })
 
-  const res = await fetch("https://orbitum.space", { method: "GET", stream })
+  const res = await fetch("https://orbitum.space", { method: "POST", body, headers, stream })
 
-  console.log("response", res)
-  console.log(await res.text())
+  console.log("response")
+  // console.log("response", res)
+  // console.log(await res.text())
+  await res.text()
+  console.log("done")
 
-  // socket.close()
+  socket.close()
 })

@@ -87,8 +87,15 @@ export class HttpStream extends EventTarget {
     this.readable = read.readable
     this.writable = write.writable
 
-    stream.readable.pipeTo(read.writable, { signal }).catch(() => { })
-    write.readable.pipeTo(stream.writable, { signal }).catch(() => { })
+    stream.readable
+      .pipeTo(read.writable, { signal })
+      .catch(e => read.writable.abort(e))
+      .catch(() => { })
+
+    write.readable
+      .pipeTo(stream.writable, { signal })
+      .catch(e => stream.writable.abort(e))
+      .catch(() => { })
   }
 
   private async onRead(chunk: Uint8Array, controller: TransformByteStreamController) {
@@ -170,6 +177,11 @@ export class HttpStream extends EventTarget {
     const compression = await this.getCompressionFromHeaders(headers)
 
     this._state = { type: "headed", version, transfer, compression }
+
+    if (transfer.type === "lengthed") {
+      if (transfer.length === 0)
+        controller.terminate()
+    }
 
     return body
   }
