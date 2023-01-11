@@ -195,16 +195,14 @@ export class HttpStream extends EventTarget {
       compression.decoder.flush()
 
       const dchunk = compression.decoder.read()
-      const bdchunk = Buffer.from(dchunk.buffer)
-      controller.enqueue(bdchunk)
+      controller.enqueue(dchunk)
     }
 
     if (transfer.offset === transfer.length) {
 
       if (compression.type === "gzip") {
         const fchunk = compression.decoder.finish()
-        const bfchunk = Buffer.from(fchunk.buffer)
-        controller.enqueue(bfchunk)
+        controller.enqueue(fchunk)
       }
 
       controller.terminate()

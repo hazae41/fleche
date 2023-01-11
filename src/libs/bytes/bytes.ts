@@ -1,41 +1,57 @@
-export type Bytes = Uint8Array
+import { Buffers } from "libs/buffers/buffers.js"
+
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
 
 export namespace Bytes {
 
-  /**
-   * Zero-copy cast the buffer into Uint8Array
-   * @param buffer 
-   * @returns 
-   */
-  export function fromBuffer(buffer: ArrayBufferLike) {
-    return new Uint8Array(buffer)
+  export function allocUnsafe(length: number) {
+    return fromView(Buffer.allocUnsafe(length))
   }
 
-  /**
-   * Zero-copy cast the view into Uint8Array
-   * @param view 
-   * @returns 
-   */
   export function fromView(view: ArrayBufferView) {
     return new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
   }
 
-  /**
-   * Convert utf8 string to bytes using TextEncoder
-   * @param text 
-   * @returns 
-   */
   export function fromUtf8(text: string) {
-    return new TextEncoder().encode(text)
+    return encoder.encode(text)
   }
 
-  /**
-   * Convert bytes to utf8 string using TextDecoder
-   * @param text 
-   * @returns 
-   */
-  export function toUtf8(array: Uint8Array) {
-    return new TextDecoder().decode(array)
+  export function toUtf8(bytes: Uint8Array) {
+    return decoder.decode(bytes)
   }
 
+  export function fromHex(text: string) {
+    return fromView(Buffer.from(text, "hex"))
+  }
+
+  export function toHex(bytes: Uint8Array) {
+    return Buffers.fromView(bytes).toString("hex")
+  }
+
+  export function fromBase64(text: string) {
+    return fromView(Buffer.from(text, "base64"))
+  }
+
+  export function toBase64(bytes: Uint8Array) {
+    return Buffers.fromView(bytes).toString("base64")
+  }
+
+  export function fromAscii(text: string) {
+    return fromView(Buffer.from(text, "ascii"))
+  }
+
+  export function toAscii(bytes: Uint8Array) {
+    return Buffers.fromView(bytes).toString("ascii")
+  }
+
+  export function random(length: number) {
+    const buffer = Buffer.allocUnsafe(length)
+    crypto.getRandomValues(buffer)
+    return fromView(buffer)
+  }
+
+  export function concat(list: Uint8Array[]) {
+    return fromView(Buffer.concat(list))
+  }
 }
