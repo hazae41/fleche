@@ -1,5 +1,3 @@
-import { CloseEvent, Event, MessageEvent, WebSocket } from "ws"
-
 export class WebSocketStream {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
