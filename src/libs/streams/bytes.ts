@@ -1,4 +1,3 @@
-
 export interface TransformByteStreamController {
   enqueue(chunk: ArrayBufferView): void
   error(e?: any): void

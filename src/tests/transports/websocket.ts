@@ -1,3 +1,5 @@
+import { Future } from "libs/futures/future.js"
+
 export class WebSocketStream {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
@@ -38,13 +40,13 @@ export class WebSocketStream {
       try { controller.close() } catch (e: unknown) { }
     }
 
-    this.websocket.addEventListener("message", onMessage)
-    this.websocket.addEventListener("error", onError)
-    this.websocket.addEventListener("close", onClose)
+    this.websocket.addEventListener("message", onMessage, { passive: true })
+    this.websocket.addEventListener("error", onError, { passive: true })
+    this.websocket.addEventListener("close", onClose, { passive: true })
   }
 
   private async onReadCancel() {
-    this.websocket.close()
+    await this.close()
   }
 
   private async onWriteStart(controller: WritableStreamDefaultController) {
@@ -58,8 +60,8 @@ export class WebSocketStream {
       try { controller.error() } catch (e: unknown) { }
     }
 
-    this.websocket.addEventListener("error", onError)
-    this.websocket.addEventListener("close", onClose)
+    this.websocket.addEventListener("error", onError, { passive: true })
+    this.websocket.addEventListener("close", onClose, { passive: true })
   }
 
   private async onWrite(chunk: Uint8Array) {
@@ -67,6 +69,25 @@ export class WebSocketStream {
   }
 
   private async onWriteAbort() {
-    this.websocket.close()
+    await this.close()
+  }
+
+  private async close() {
+    const close = new Future<void>()
+
+    function onClose(e: CloseEvent) {
+      if (e.wasClean)
+        close.ok()
+      else
+        close.err(e)
+    }
+
+    try {
+      this.websocket.addEventListener("close", onClose, { passive: true })
+
+      await close.promise
+    } finally {
+      this.websocket.addEventListener("close", onClose)
+    }
   }
 }
