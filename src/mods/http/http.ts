@@ -20,12 +20,17 @@ export interface HttpHeadedState {
 }
 
 export type HttpTransfer =
-  | HttpChunkedTransfer
+  | HttpUnlengthedTransfer
   | HttpLengthedTransfer
+  | HttpChunkedTransfer
 
 export interface HttpChunkedTransfer {
   type: "chunked",
   buffer: Binary
+}
+
+export interface HttpUnlengthedTransfer {
+  type: "unlengthed"
 }
 
 export interface HttpLengthedTransfer {
@@ -120,20 +125,28 @@ export class HttpStream extends EventTarget {
     if (this._state.type !== "headed")
       throw new Error("Invalid state")
 
+    if (this._state.transfer.type === "unlengthed")
+      return await this.onReadUnlenghted(chunk, controller)
     if (this._state.transfer.type === "lengthed")
       return await this.onReadLenghted(chunk, controller)
     if (this._state.transfer.type === "chunked")
       return await this.onReadChunked(chunk, controller)
 
-    throw new Error("Invalid state")
+    throw new Error(`Invalid state`)
   }
 
   private getTransferFromHeaders(headers: Headers): HttpTransfer {
     const type = headers.get("transfer-encoding")
 
     if (type === null) {
-      const length = Number(headers.get("content-length"))
-      return { type: "lengthed", offset: 0, length }
+      const hlength = headers.get("content-length")
+
+      if (hlength) {
+        const length = Number(hlength)
+        return { type: "lengthed", offset: 0, length }
+      } else {
+        return { type: "unlengthed" }
+      }
     }
 
     if (type === "chunked") {
@@ -192,6 +205,26 @@ export class HttpStream extends EventTarget {
     }
 
     return body
+  }
+
+  private async onReadUnlenghted(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
+    if (this._state.type !== "headed")
+      throw new Error("Invalid state")
+    if (this._state.transfer.type !== "unlengthed")
+      throw new Error("Invalid state")
+
+    const { compression } = this._state
+
+    if (compression.type === "none")
+      controller.enqueue(chunk)
+
+    if (compression.type === "gzip") {
+      compression.decoder.write(chunk)
+      compression.decoder.flush()
+
+      const dchunk = compression.decoder.read()
+      controller.enqueue(dchunk)
+    }
   }
 
   private async onReadLenghted(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
