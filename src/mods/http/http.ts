@@ -66,6 +66,9 @@ export class HttpStream extends EventTarget {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 
+  private _input?: TransformStreamDefaultController<Uint8Array>
+  private _output?: TransformStreamDefaultController<Uint8Array>
+
   /**
    * Create a new HTTP 1.1 stream
    * @param stream substream
@@ -79,6 +82,7 @@ export class HttpStream extends EventTarget {
     const { signal } = params
 
     const read = new TransformStream<Uint8Array>({
+      start: this.onReadStart.bind(this),
       transform: this.onRead.bind(this),
     })
 
@@ -95,11 +99,13 @@ export class HttpStream extends EventTarget {
 
     stream.readable
       .pipeTo(read.writable, { signal })
-      .catch(() => { })
+      .then(this.onClose.bind(this))
+      .catch(this.onError.bind(this))
 
     write.readable
       .pipeTo(stream.writable, { signal })
-      .catch(() => { })
+      .then(this.onClose.bind(this))
+      .catch(this.onError.bind(this))
 
     const trash = new WritableStream()
 
@@ -108,7 +114,33 @@ export class HttpStream extends EventTarget {
      */
     trashable
       .pipeTo(trash, { signal })
-      .catch(() => { })
+      .then(this.onClose.bind(this))
+      .catch(this.onError.bind(this))
+  }
+
+  get input() {
+    return this._input!
+  }
+
+  get output() {
+    return this._output!
+  }
+
+  private async onClose() {
+    const event = new CloseEvent("close", {})
+    if (!this.dispatchEvent(event)) return
+  }
+
+  private async onError(error?: unknown) {
+    const event = new ErrorEvent("error", { error })
+    if (!this.dispatchEvent(event)) return
+
+    try { this.input.error(error) } catch (e: unknown) { }
+    try { this.output.error(error) } catch (e: unknown) { }
+  }
+
+  private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
+    this._input = controller
   }
 
   private async onRead(chunk: Uint8Array, controller: TransformStreamDefaultController) {
@@ -324,7 +356,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWriteStart(controller: TransformStreamDefaultController<Uint8Array>) {
-    // console.debug("-> start")
+    this._output = controller
 
     const { method, pathname, host, headers } = this.params
 
@@ -340,8 +372,6 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWrite(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
-    // console.debug("->", chunk)
-
     const text = new TextDecoder().decode(chunk)
     const length = text.length.toString(16)
     const line = `${length}\r\n${text}\r\n`
@@ -350,8 +380,6 @@ export class HttpStream extends EventTarget {
   }
 
   private async onWriteFlush(controller: TransformStreamDefaultController<Uint8Array>) {
-    // console.debug("-> flush")
-
     controller.enqueue(Bytes.fromUtf8(`0\r\n\r\n\r\n`))
   }
 }
