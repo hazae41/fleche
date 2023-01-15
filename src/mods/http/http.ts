@@ -225,6 +225,8 @@ export class HttpStream extends EventTarget {
       const dchunk = compression.decoder.read()
       controller.enqueue(dchunk)
     }
+
+    controller.terminate()
   }
 
   private async onReadLenghted(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
