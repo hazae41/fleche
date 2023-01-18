@@ -172,7 +172,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onRead(chunk: Uint8Array, controller: TransformStreamDefaultController) {
-    console.debug("<-", chunk)
+    // console.debug("<-", chunk)
 
     if (this._state.type === "none") {
       const result = await this.onReadNone(chunk, controller)

@@ -31,7 +31,7 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   try {
     signal.addEventListener("abort", response.err, { passive: true })
     http.read.addEventListener("close", response.err, { passive: true })
-    http.read.addEventListener("error", response.err, { passive: true })
+    http.addEventListener("error", response.err, { passive: true })
     http.addEventListener("body", onBody, { passive: true })
 
     if (request.body)
@@ -43,7 +43,7 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   } finally {
     signal.removeEventListener("abort", response.err)
     http.read.removeEventListener("close", response.err)
-    http.read.removeEventListener("error", response.err)
+    http.removeEventListener("error", response.err)
     http.removeEventListener("body", onBody)
   }
 }

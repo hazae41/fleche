@@ -54,14 +54,9 @@ test("WebSocketStream", async () => {
 
   const res = await fetch("https://orbitum.space", { stream, signal })
 
-  // console.log("response", res)
-  // console.log(await res.text())
-
-  // aborter.abort()
-
-  console.log("response")
-  await res.text()
-  console.log("done")
+  console.log("got header", res.status)
+  const bytes = await res.arrayBuffer()
+  console.log("got body", bytes.byteLength, "bytes")
 
   socket.close()
 })
