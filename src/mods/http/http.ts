@@ -63,6 +63,9 @@ export interface HttpStreamParams {
 }
 
 export class HttpStream extends EventTarget {
+  readonly read = new EventTarget()
+  readonly write = new EventTarget()
+
   private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(10 * 1024) }
 
   readonly readable: ReadableStream<Uint8Array>
@@ -70,9 +73,6 @@ export class HttpStream extends EventTarget {
 
   private _input?: TransformStreamDefaultController<Uint8Array>
   private _output?: TransformStreamDefaultController<Uint8Array>
-
-  readonly read = new EventTarget()
-  readonly write = new EventTarget()
 
   /**
    * Create a new HTTP 1.1 stream
