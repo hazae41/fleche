@@ -29,8 +29,10 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   }
 
   try {
-    http.addEventListener("body", onBody, { passive: true })
     signal.addEventListener("abort", response.err, { passive: true })
+    http.read.addEventListener("close", response.err, { passive: true })
+    http.read.addEventListener("error", response.err, { passive: true })
+    http.addEventListener("body", onBody, { passive: true })
 
     if (request.body)
       request.body.pipeTo(http.writable, { signal }).catch(response.err)
@@ -39,7 +41,9 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
 
     return await response.promise
   } finally {
-    http.removeEventListener("body", onBody)
     signal.removeEventListener("abort", response.err)
+    http.read.removeEventListener("close", response.err)
+    http.read.removeEventListener("error", response.err)
+    http.removeEventListener("body", onBody)
   }
 }
