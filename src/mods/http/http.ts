@@ -149,22 +149,19 @@ export class HttpStream extends EventTarget {
   private async onReadError(error?: unknown) {
     const event = new ErrorEvent("error", { error })
     if (!this.read.dispatchEvent(event)) return
-
-    try { this.input.error(error) } catch (e: unknown) { }
-    try { this.output.error(error) } catch (e: unknown) { }
   }
 
   private async onWriteError(error?: unknown) {
     const event = new ErrorEvent("error", { error })
     if (!this.write.dispatchEvent(event)) return
-
-    try { this.input.error(error) } catch (e: unknown) { }
-    try { this.output.error(error) } catch (e: unknown) { }
   }
 
   private async onError(error?: unknown) {
     const event = new ErrorEvent("error", { error })
     if (!this.dispatchEvent(event)) return
+
+    try { this.input.error(error) } catch (e: unknown) { }
+    try { this.output.error(error) } catch (e: unknown) { }
   }
 
   private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
