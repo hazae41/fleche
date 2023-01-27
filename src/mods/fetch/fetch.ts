@@ -18,10 +18,10 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   const request = new Request(input, init2)
   const response = new Future<Response>()
 
-  const { url, method, signal } = request
+  const { url, method, headers, signal } = request
   const { host, pathname } = new URL(url)
 
-  const http = new HttpStream(stream, { host, pathname, method, signal })
+  const http = new HttpStream(stream, { host, pathname, method, headers, signal })
 
   function onBody(e: Event) {
     const msg = e as MessageEvent<ResponseInit>
