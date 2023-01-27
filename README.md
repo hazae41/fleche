@@ -25,6 +25,7 @@ npm i @hazae41/fleche
 - More HTTP 1.1 features
 - Brotli compression
 - HTTP 2, HTTP 3 (QUIC)
+- WebSockets
 
 ### Usage
 
