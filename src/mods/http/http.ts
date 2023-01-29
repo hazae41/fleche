@@ -3,6 +3,7 @@ import { Foras, GzDecoder } from "@hazae41/foras"
 import { Bytes } from "libs/bytes/bytes.js"
 import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
+import { Events } from "libs/events/events.js"
 import { Strings } from "libs/strings/strings.js"
 
 export type HttpState =
@@ -66,7 +67,7 @@ export class HttpStream extends EventTarget {
   readonly read = new EventTarget()
   readonly write = new EventTarget()
 
-  private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(10 * 1024) }
+  private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(64 * 1024) }
 
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
@@ -156,12 +157,14 @@ export class HttpStream extends EventTarget {
     if (!this.write.dispatchEvent(event)) return
   }
 
-  private async onError(error?: unknown) {
-    const event = new ErrorEvent("error", { error })
+  private async onError(e: Event) {
+    const event = Events.clone(e) as ErrorEvent
     if (!this.dispatchEvent(event)) return
 
-    try { this.input.error(error) } catch (e: unknown) { }
-    try { this.output.error(error) } catch (e: unknown) { }
+    console.error(event.error)
+
+    try { this.input.error(event.error) } catch (e: unknown) { }
+    try { this.output.error(event.error) } catch (e: unknown) { }
   }
 
   private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
@@ -169,7 +172,7 @@ export class HttpStream extends EventTarget {
   }
 
   private async onRead(chunk: Uint8Array, controller: TransformStreamDefaultController) {
-    // console.debug("<-", chunk)
+    // console.debug("<-", chunk.length, Bytes.toUtf8(chunk))
 
     if (this._state.type === "none") {
       const result = await this.onReadNone(chunk, controller)
@@ -207,7 +210,7 @@ export class HttpStream extends EventTarget {
     }
 
     if (type === "chunked") {
-      const buffer = Binary.allocUnsafe(10 * 1024)
+      const buffer = Binary.allocUnsafe(64 * 1024)
       return { type, buffer }
     }
 
