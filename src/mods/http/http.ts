@@ -115,9 +115,6 @@ export class HttpStream extends EventTarget {
 
     const trash = new WritableStream()
 
-    /**
-     * Force call to read.readable.transform()
-     */
     trashable
       .pipeTo(trash, { signal })
       .then(this.onReadClose.bind(this))
@@ -389,6 +386,7 @@ export class HttpStream extends EventTarget {
     headers?.forEach((v, k) => head += `${k}: ${v}\r\n`)
     head += `\r\n`
 
+    // console.debug("->", head.length, head)
     controller.enqueue(Bytes.fromUtf8(head))
   }
 
@@ -397,6 +395,7 @@ export class HttpStream extends EventTarget {
     const length = text.length.toString(16)
     const line = `${length}\r\n${text}\r\n`
 
+    // console.debug("->", line.length, line)
     controller.enqueue(Bytes.fromUtf8(line))
   }
 
