@@ -256,11 +256,6 @@ export class HttpStream extends EventTarget {
 
     this._state = { type: "headed", version, transfer, compression }
 
-    if (transfer.type === "lengthed") {
-      if (transfer.length === 0)
-        controller.terminate()
-    }
-
     return body
   }
 
@@ -282,8 +277,6 @@ export class HttpStream extends EventTarget {
       const dchunk = compression.decoder.read()
       controller.enqueue(dchunk)
     }
-
-    controller.terminate()
   }
 
   private async onReadLenghted(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
