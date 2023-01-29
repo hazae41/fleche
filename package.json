@@ -22,7 +22,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@hazae41/binary": "^1.1.7",
+    "@hazae41/binary": "^1.1.8",
     "@hazae41/foras": "^2.0.6"
   },
   "devDependencies": {
@@ -30,8 +30,8 @@
     "@rollup/plugin-inject": "^5.0.3",
     "@rollup/plugin-typescript": "^11.0.0",
     "@types/ws": "^8.5.4",
-    "rimraf": "^4.1.1",
-    "rollup": "^3.10.0",
+    "rimraf": "^4.1.2",
+    "rollup": "^3.12.0",
     "rollup-plugin-dts": "^5.1.1",
     "rollup-plugin-node-externals": "^5.1.0",
     "typescript": "^4.9.4",
