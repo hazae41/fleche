@@ -131,8 +131,6 @@ export class HttpStream extends AsyncEventTarget {
   }
 
   private async onReadClose() {
-    console.log("read closed")
-
     const closeEvent = new CloseEvent("close", {})
     if (!await this.read.dispatchEvent(closeEvent)) return
   }
@@ -143,8 +141,6 @@ export class HttpStream extends AsyncEventTarget {
   }
 
   private async onReadError(error?: unknown) {
-    console.log("read error")
-
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.read.dispatchEvent(errorEvent)) return
   }
@@ -156,8 +152,6 @@ export class HttpStream extends AsyncEventTarget {
 
   private async onError(e: Event) {
     const errorEvent = e as ErrorEvent
-
-    console.error("Fleche", errorEvent.error)
 
     const errorEventClone = Events.clone(errorEvent)
     if (!await this.dispatchEvent(errorEventClone)) return
@@ -313,7 +307,6 @@ export class HttpStream extends AsyncEventTarget {
         controller.enqueue(fchunk)
       }
 
-      console.log("TERMINATING")
       controller.terminate()
     }
   }
