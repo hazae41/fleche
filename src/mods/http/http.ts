@@ -100,13 +100,14 @@ export class HttpStream extends AsyncEventTarget {
       flush: this.onWriteFlush.bind(this),
     })
 
-    const [readable, trashable] = read.readable.tee()
+    const read2 = new TransformStream<Uint8Array>()
 
-    this.readable = readable
+    this.readable = read2.readable
     this.writable = write.writable
 
     stream.readable
-      .pipeTo(read.writable, { signal })
+      .pipeThrough(read, { signal })
+      .pipeTo(read2.writable, { signal })
       .then(this.onReadClose.bind(this))
       .catch(this.onReadError.bind(this))
 
@@ -114,13 +115,6 @@ export class HttpStream extends AsyncEventTarget {
       .pipeTo(stream.writable, { signal })
       .then(this.onWriteClose.bind(this))
       .catch(this.onWriteError.bind(this))
-
-    const trash = new WritableStream()
-
-    trashable
-      .pipeTo(trash, { signal })
-      .then(this.onReadClose.bind(this))
-      .catch(this.onReadError.bind(this))
 
     const onError = this.onError.bind(this)
 
@@ -137,6 +131,8 @@ export class HttpStream extends AsyncEventTarget {
   }
 
   private async onReadClose() {
+    console.log("read closed")
+
     const closeEvent = new CloseEvent("close", {})
     if (!await this.read.dispatchEvent(closeEvent)) return
   }
@@ -147,6 +143,8 @@ export class HttpStream extends AsyncEventTarget {
   }
 
   private async onReadError(error?: unknown) {
+    console.log("read error")
+
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.read.dispatchEvent(errorEvent)) return
   }
@@ -158,6 +156,8 @@ export class HttpStream extends AsyncEventTarget {
 
   private async onError(e: Event) {
     const errorEvent = e as ErrorEvent
+
+    console.error("Fleche", errorEvent.error)
 
     const errorEventClone = Events.clone(errorEvent)
     if (!await this.dispatchEvent(errorEventClone)) return
@@ -313,6 +313,7 @@ export class HttpStream extends AsyncEventTarget {
         controller.enqueue(fchunk)
       }
 
+      console.log("TERMINATING")
       controller.terminate()
     }
   }
