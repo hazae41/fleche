@@ -4,6 +4,7 @@ import { Bytes } from "libs/bytes/bytes.js"
 import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
 import { Events } from "libs/events/events.js"
+import { AsyncEventTarget } from "libs/events/target.js"
 import { Strings } from "libs/strings/strings.js"
 
 export type HttpState =
@@ -63,9 +64,10 @@ export interface HttpStreamParams {
   signal?: AbortSignal
 }
 
-export class HttpStream extends EventTarget {
-  readonly read = new EventTarget()
-  readonly write = new EventTarget()
+export class HttpStream extends AsyncEventTarget {
+
+  readonly read = new AsyncEventTarget()
+  readonly write = new AsyncEventTarget()
 
   private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(64 * 1024) }
 
@@ -135,33 +137,33 @@ export class HttpStream extends EventTarget {
   }
 
   private async onReadClose() {
-    const event = new CloseEvent("close", {})
-    if (!this.read.dispatchEvent(event)) return
+    const closeEvent = new CloseEvent("close", {})
+    if (!await this.read.dispatchEvent(closeEvent)) return
   }
 
   private async onWriteClose() {
-    const event = new CloseEvent("close", {})
-    if (!this.write.dispatchEvent(event)) return
+    const closeEvent = new CloseEvent("close", {})
+    if (!await this.write.dispatchEvent(closeEvent)) return
   }
 
   private async onReadError(error?: unknown) {
-    const event = new ErrorEvent("error", { error })
-    if (!this.read.dispatchEvent(event)) return
+    const errorEvent = new ErrorEvent("error", { error })
+    if (!await this.read.dispatchEvent(errorEvent)) return
   }
 
   private async onWriteError(error?: unknown) {
-    const event = new ErrorEvent("error", { error })
-    if (!this.write.dispatchEvent(event)) return
+    const errorEvent = new ErrorEvent("error", { error })
+    if (!await this.write.dispatchEvent(errorEvent)) return
   }
 
   private async onError(e: Event) {
-    const event = Events.clone(e) as ErrorEvent
-    if (!this.dispatchEvent(event)) return
+    const errorEvent = e as ErrorEvent
 
-    console.error(event.error)
+    const errorEventClone = Events.clone(errorEvent)
+    if (!await this.dispatchEvent(errorEventClone)) return
 
-    try { this.input.error(event.error) } catch (e: unknown) { }
-    try { this.output.error(event.error) } catch (e: unknown) { }
+    try { this.input.error(errorEvent.error) } catch (e: unknown) { }
+    try { this.output.error(errorEvent.error) } catch (e: unknown) { }
   }
 
   private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
@@ -249,7 +251,8 @@ export class HttpStream extends EventTarget {
 
     const status = Number(statusString)
     const headers = new Headers(rawHeaders.map(it => Strings.splitOnFirst(it, ": ")))
-    this.dispatchEvent(new MessageEvent("body", { data: { headers, status, statusText } }))
+
+    await this.dispatchEvent(new MessageEvent("body", { data: { headers, status, statusText } }))
 
     const transfer = this.getTransferFromHeaders(headers)
     const compression = await this.getCompressionFromHeaders(headers)
