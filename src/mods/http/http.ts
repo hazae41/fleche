@@ -3,9 +3,7 @@ import { Foras, GzDecoder } from "@hazae41/foras"
 import { Bytes } from "libs/bytes/bytes.js"
 import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
-import { Events } from "libs/events/events.js"
 import { AsyncEventTarget } from "libs/events/target.js"
-import { Streams } from "libs/streams/streams.js"
 import { Strings } from "libs/strings/strings.js"
 
 export type HttpState =
@@ -126,11 +124,6 @@ export class HttpStream extends AsyncEventTarget {
       .pipeTo(this.piper.writable)
       .then(() => { })
       .catch(() => { })
-
-    const onError = this.onError.bind(this)
-
-    this.read.addEventListener("error", onError, { passive: true })
-    this.write.addEventListener("error", onError, { passive: true })
   }
 
   private async onReadClose() {
@@ -148,35 +141,23 @@ export class HttpStream extends AsyncEventTarget {
   }
 
   private async onReadError(error?: unknown) {
-    if (Streams.isCloseError(error))
-      return await this.onReadClose()
-
     // console.debug(`${this.#class.name}.onReadError`, error)
+
+    try { this.input!.error(error) } catch (e: unknown) { }
+    try { this.output!.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.read.dispatchEvent(errorEvent)) return
   }
 
   private async onWriteError(error?: unknown) {
-    if (Streams.isCloseError(error))
-      return await this.onWriteClose()
-
     // console.debug(`${this.#class.name}.onWriteError`, error)
+
+    try { this.input!.error(error) } catch (e: unknown) { }
+    try { this.output!.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.write.dispatchEvent(errorEvent)) return
-  }
-
-  private async onError(event: Event) {
-    const errorEvent = event as ErrorEvent
-
-    // console.debug(`${this.#class.name}.onError`, errorEvent)
-
-    const errorEventClone = Events.clone(errorEvent)
-    if (!await this.dispatchEvent(errorEventClone)) return
-
-    try { this.input!.error(errorEvent.error) } catch (e: unknown) { }
-    try { this.output!.error(errorEvent.error) } catch (e: unknown) { }
   }
 
   private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
