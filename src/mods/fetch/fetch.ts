@@ -1,3 +1,4 @@
+import { AbortEvent } from "libs/events/abort.js"
 import { Future } from "libs/futures/future.js"
 import { HttpStream } from "mods/http/http.js"
 
@@ -16,34 +17,67 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   const { stream, ...init2 } = init
 
   const request = new Request(input, init2)
-  const response = new Future<Response>()
+  const future = new Future<Response, Error>()
 
   const { url, method, headers, signal } = request
   const { host, pathname } = new URL(url)
 
   const http = new HttpStream(stream, { host, pathname, method, headers, signal })
 
-  function onBody(e: Event) {
-    const msg = e as MessageEvent<ResponseInit>
-    response.ok(new Response(http.readable, msg.data))
+  const onBody = (event: Event) => {
+    const msgEvent = event as MessageEvent<ResponseInit>
+    const response = new Response(http.readable, msgEvent.data)
+    future.ok(response)
+  }
+
+  const onAbort = (event: Event) => {
+    const abortEvent = event as AbortEvent
+    const error = new Error(`Aborted`, { cause: abortEvent.target.reason })
+    future.err(error)
+  }
+
+  const onClose = (event: Event) => {
+    const closeEvent = event as CloseEvent
+    const error = new Error(`Closed`, { cause: closeEvent })
+    future.err(error)
+  }
+
+  const onError = (event: Event) => {
+    const errorEvent = event as ErrorEvent
+    const error = new Error(`Errored`, { cause: errorEvent })
+    future.err(error)
   }
 
   try {
-    signal.addEventListener("abort", response.err, { passive: true })
-    http.read.addEventListener("close", response.err, { passive: true })
-    http.addEventListener("error", response.err, { passive: true })
+    signal.addEventListener("abort", onAbort, { passive: true })
+    http.read.addEventListener("close", onClose, { passive: true })
+    http.addEventListener("error", onError, { passive: true })
     http.addEventListener("body", onBody, { passive: true })
 
-    if (request.body)
-      request.body.pipeTo(http.writable, { signal }).catch(response.err)
-    else
-      http.writable.close().catch(response.err)
+    let body = request.body
 
-    return await response.promise
+    /**
+     * Firefox fix
+     */
+    if (body === undefined && init.body !== undefined) {
+      if (init.body instanceof ReadableStream) {
+        body = init.body
+      } else {
+        const blob = await request.blob()
+        body = blob.stream()
+      }
+    }
+
+    if (body)
+      body.pipeTo(http.writable, { signal }).catch(future.err)
+    else
+      http.writable.close().catch(future.err)
+
+    return await future.promise
   } finally {
-    signal.removeEventListener("abort", response.err)
-    http.read.removeEventListener("close", response.err)
-    http.removeEventListener("error", response.err)
+    signal.removeEventListener("abort", onAbort)
+    http.read.removeEventListener("close", onClose)
+    http.removeEventListener("error", onError)
     http.removeEventListener("body", onBody)
   }
 }

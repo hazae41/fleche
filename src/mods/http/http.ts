@@ -5,6 +5,7 @@ import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
 import { Events } from "libs/events/events.js"
 import { AsyncEventTarget } from "libs/events/target.js"
+import { Streams } from "libs/streams/streams.js"
 import { Strings } from "libs/strings/strings.js"
 
 export type HttpState =
@@ -61,21 +62,27 @@ export interface HttpStreamParams {
   host: string,
   method: string,
   headers?: Headers,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  debug?: boolean
 }
 
 export class HttpStream extends AsyncEventTarget {
+  readonly #class = HttpStream
 
   readonly read = new AsyncEventTarget()
   readonly write = new AsyncEventTarget()
 
-  private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(64 * 1024) }
-
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 
-  private _input?: TransformStreamDefaultController<Uint8Array>
-  private _output?: TransformStreamDefaultController<Uint8Array>
+  private reader: TransformStream<Uint8Array>
+  private writer: TransformStream<Uint8Array>
+  private piper: TransformStream<Uint8Array>
+
+  private input?: TransformStreamDefaultController<Uint8Array>
+  private output?: TransformStreamDefaultController<Uint8Array>
+
+  private _state: HttpState = { type: "none", buffer: Binary.allocUnsafe(64 * 1024) }
 
   /**
    * Create a new HTTP 1.1 stream
@@ -89,32 +96,36 @@ export class HttpStream extends AsyncEventTarget {
 
     const { signal } = params
 
-    const read = new TransformStream<Uint8Array>({
+    this.reader = new TransformStream<Uint8Array>({
       start: this.onReadStart.bind(this),
       transform: this.onRead.bind(this),
     })
 
-    const write = new TransformStream<Uint8Array>({
+    this.writer = new TransformStream<Uint8Array>({
       start: this.onWriteStart.bind(this),
       transform: this.onWrite.bind(this),
       flush: this.onWriteFlush.bind(this),
     })
 
-    const read2 = new TransformStream<Uint8Array>()
+    this.piper = new TransformStream<Uint8Array>()
 
-    this.readable = read2.readable
-    this.writable = write.writable
+    this.readable = this.piper.readable
+    this.writable = this.writer.writable
 
     stream.readable
-      .pipeThrough(read, { signal })
-      .pipeTo(read2.writable, { signal })
+      .pipeTo(this.reader.writable, { signal })
       .then(this.onReadClose.bind(this))
       .catch(this.onReadError.bind(this))
 
-    write.readable
+    this.writer.readable
       .pipeTo(stream.writable, { signal })
       .then(this.onWriteClose.bind(this))
       .catch(this.onWriteError.bind(this))
+
+    this.reader.readable
+      .pipeTo(this.piper.writable)
+      .then(() => { })
+      .catch(() => { })
 
     const onError = this.onError.bind(this)
 
@@ -122,46 +133,54 @@ export class HttpStream extends AsyncEventTarget {
     this.write.addEventListener("error", onError, { passive: true })
   }
 
-  get input() {
-    return this._input!
-  }
-
-  get output() {
-    return this._output!
-  }
-
   private async onReadClose() {
+    // console.debug(`${this.#class.name}.onReadClose`)
+
     const closeEvent = new CloseEvent("close", {})
     if (!await this.read.dispatchEvent(closeEvent)) return
   }
 
   private async onWriteClose() {
+    // console.debug(`${this.#class.name}.onWriteClose`)
+
     const closeEvent = new CloseEvent("close", {})
     if (!await this.write.dispatchEvent(closeEvent)) return
   }
 
   private async onReadError(error?: unknown) {
+    if (Streams.isCloseError(error))
+      return await this.onReadClose()
+
+    // console.debug(`${this.#class.name}.onReadError`, error)
+
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.read.dispatchEvent(errorEvent)) return
   }
 
   private async onWriteError(error?: unknown) {
+    if (Streams.isCloseError(error))
+      return await this.onWriteClose()
+
+    // console.debug(`${this.#class.name}.onWriteError`, error)
+
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.write.dispatchEvent(errorEvent)) return
   }
 
-  private async onError(e: Event) {
-    const errorEvent = e as ErrorEvent
+  private async onError(event: Event) {
+    const errorEvent = event as ErrorEvent
+
+    // console.debug(`${this.#class.name}.onError`, errorEvent)
 
     const errorEventClone = Events.clone(errorEvent)
     if (!await this.dispatchEvent(errorEventClone)) return
 
-    try { this.input.error(errorEvent.error) } catch (e: unknown) { }
-    try { this.output.error(errorEvent.error) } catch (e: unknown) { }
+    try { this.input!.error(errorEvent.error) } catch (e: unknown) { }
+    try { this.output!.error(errorEvent.error) } catch (e: unknown) { }
   }
 
   private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
-    this._input = controller
+    this.input = controller
   }
 
   private async onRead(chunk: Uint8Array, controller: TransformStreamDefaultController) {
@@ -371,7 +390,7 @@ export class HttpStream extends AsyncEventTarget {
   }
 
   private async onWriteStart(controller: TransformStreamDefaultController<Uint8Array>) {
-    this._output = controller
+    this.output = controller
 
     const { method, pathname, host, headers } = this.params
 
