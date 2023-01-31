@@ -143,7 +143,6 @@ export class HttpStream extends AsyncEventTarget {
   private async onReadError(error?: unknown) {
     console.debug(`${this.#class.name}.onReadError`, error)
 
-    try { this.input!.error(error) } catch (e: unknown) { }
     try { this.output!.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
@@ -154,7 +153,6 @@ export class HttpStream extends AsyncEventTarget {
     console.debug(`${this.#class.name}.onWriteError`, error)
 
     try { this.input!.error(error) } catch (e: unknown) { }
-    try { this.output!.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.write.dispatchEvent(errorEvent)) return
