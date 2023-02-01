@@ -1,6 +1,6 @@
 import { AbortEvent } from "libs/events/abort.js"
 import { Future } from "libs/futures/future.js"
-import { HttpStream } from "mods/http/http.js"
+import { HttpClientStream } from "mods/http/client.js"
 
 export interface FetchParams {
   stream: ReadableWritablePair<Uint8Array>
@@ -19,10 +19,14 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
   const request = new Request(input, init2)
   const future = new Future<Response, Error>()
 
-  const { url, method, headers, signal } = request
+  const { url, method, signal } = request
   const { host, pathname } = new URL(url)
+  const headers = new Headers(init.headers)
 
-  const http = new HttpStream(stream, { host, pathname, method, headers, signal })
+  if (!headers.has("Host"))
+    headers.set("Host", host)
+
+  const http = new HttpClientStream(stream, { pathname, method, headers, signal })
 
   const onBody = (event: Event) => {
     const msgEvent = event as MessageEvent<ResponseInit>

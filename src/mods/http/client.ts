@@ -57,15 +57,13 @@ export interface HttpGzipCompression {
 
 export interface HttpStreamParams {
   pathname: string,
-  host: string,
   method: string,
-  headers?: Headers,
-  signal?: AbortSignal,
-  debug?: boolean
+  headers: Headers,
+  signal?: AbortSignal
 }
 
-export class HttpStream extends AsyncEventTarget {
-  readonly #class = HttpStream
+export class HttpClientStream extends AsyncEventTarget {
+  readonly #class = HttpClientStream
 
   readonly read = new AsyncEventTarget()
   readonly write = new AsyncEventTarget()
@@ -371,17 +369,19 @@ export class HttpStream extends AsyncEventTarget {
   private async onWriteStart(controller: TransformStreamDefaultController<Uint8Array>) {
     this.output = controller
 
-    const { method, pathname, host, headers } = this.params
+    const { method, pathname, headers } = this.params
+
+    if (!headers.has("Transfer-Encoding"))
+      headers.set("Transfer-Encoding", "chunked")
+    if (!headers.has("Accept-Encoding"))
+      headers.set("Accept-Encoding", "gzip")
 
     let head = ``
     head += `${method} ${pathname} HTTP/1.1\r\n`
-    head += `Host: ${host}\r\n`
-    head += `Transfer-Encoding: chunked\r\n`
-    head += `Accept-Encoding: gzip\r\n`
-    headers?.forEach((v, k) => head += `${k}: ${v}\r\n`)
+    headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
     head += `\r\n`
 
-    // console.debug("->", head.length, head)
+    console.debug("->", head.length, head)
     controller.enqueue(Bytes.fromUtf8(head))
   }
 
