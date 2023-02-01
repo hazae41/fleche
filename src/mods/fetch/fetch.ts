@@ -28,7 +28,7 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
 
   const http = new HttpClientStream(stream, { pathname, method, headers, signal })
 
-  const onBody = (event: Event) => {
+  const onHead = (event: Event) => {
     const msgEvent = event as MessageEvent<ResponseInit>
     const response = new Response(http.readable, msgEvent.data)
     future.ok(response)
@@ -56,7 +56,7 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
     signal.addEventListener("abort", onAbort, { passive: true })
     http.read.addEventListener("close", onClose, { passive: true })
     http.read.addEventListener("error", onError, { passive: true })
-    http.addEventListener("body", onBody, { passive: true })
+    http.read.addEventListener("head", onHead, { passive: true })
 
     let body = request.body
 
@@ -82,6 +82,6 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
     signal.removeEventListener("abort", onAbort)
     http.read.removeEventListener("close", onClose)
     http.read.removeEventListener("error", onError)
-    http.removeEventListener("body", onBody)
+    http.read.removeEventListener("head", onHead)
   }
 }

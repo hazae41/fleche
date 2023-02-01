@@ -11,15 +11,15 @@ export type HttpState =
   | HttpHeadedState
 
 export interface HttpNoneState {
-  type: "none"
-  buffer: Binary
+  readonly type: "none"
+  readonly buffer: Binary
 }
 
 export interface HttpHeadedState {
-  type: "headed",
-  version: string,
-  transfer: HttpTransfer,
-  compression: HttpCompression
+  readonly type: "headed",
+  readonly version: string,
+  readonly transfer: HttpTransfer,
+  readonly compression: HttpCompression
 }
 
 export type HttpTransfer =
@@ -28,18 +28,19 @@ export type HttpTransfer =
   | HttpChunkedTransfer
 
 export interface HttpChunkedTransfer {
-  type: "chunked",
-  buffer: Binary
+  readonly type: "chunked",
+  readonly buffer: Binary
 }
 
 export interface HttpUnlengthedTransfer {
-  type: "unlengthed"
+  readonly type: "unlengthed"
 }
 
 export interface HttpLengthedTransfer {
-  type: "lengthed",
+  readonly type: "lengthed",
+  readonly length: number
+
   offset: number,
-  length: number
 }
 
 export type HttpCompression =
@@ -47,33 +48,33 @@ export type HttpCompression =
   | HttpGzipCompression
 
 export interface HttpNoneCompression {
-  type: "none"
+  readonly type: "none"
 }
 
 export interface HttpGzipCompression {
-  type: "gzip"
-  decoder: GzDecoder
+  readonly type: "gzip"
+  readonly decoder: GzDecoder
 }
 
 export interface HttpStreamParams {
-  pathname: string,
-  method: string,
-  headers: Headers,
-  signal?: AbortSignal
+  readonly pathname: string,
+  readonly method: string,
+  readonly headers: Headers,
+  readonly signal?: AbortSignal
 }
 
 export class HttpClientStream extends AsyncEventTarget {
   readonly #class = HttpClientStream
 
-  readonly read = new AsyncEventTarget()
-  readonly write = new AsyncEventTarget()
+  public readonly read = new AsyncEventTarget()
+  public readonly write = new AsyncEventTarget()
 
-  readonly readable: ReadableStream<Uint8Array>
-  readonly writable: WritableStream<Uint8Array>
+  public readonly readable: ReadableStream<Uint8Array>
+  public readonly writable: WritableStream<Uint8Array>
 
-  private reader: TransformStream<Uint8Array>
-  private writer: TransformStream<Uint8Array>
-  private piper: TransformStream<Uint8Array>
+  private readonly reader: TransformStream<Uint8Array>
+  private readonly writer: TransformStream<Uint8Array>
+  private readonly piper: TransformStream<Uint8Array>
 
   private input?: TransformStreamDefaultController<Uint8Array>
   private output?: TransformStreamDefaultController<Uint8Array>
@@ -85,8 +86,8 @@ export class HttpClientStream extends AsyncEventTarget {
    * @param stream substream
    */
   constructor(
-    readonly stream: ReadableWritablePair<Uint8Array>,
-    readonly params: HttpStreamParams
+    public readonly stream: ReadableWritablePair<Uint8Array>,
+    public readonly params: HttpStreamParams
   ) {
     super()
 
@@ -242,8 +243,8 @@ export class HttpClientStream extends AsyncEventTarget {
     const status = Number(statusString)
     const headers = new Headers(rawHeaders.map(it => Strings.splitOnFirst(it, ": ")))
 
-    const msgEvent = new MessageEvent("body", { data: { headers, status, statusText } })
-    await this.dispatchEvent(msgEvent)
+    const msgEvent = new MessageEvent("head", { data: { headers, status, statusText } })
+    await this.read.dispatchEvent(msgEvent)
 
     const transfer = this.getTransferFromHeaders(headers)
     const compression = await this.getCompressionFromHeaders(headers)
