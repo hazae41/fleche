@@ -233,23 +233,24 @@ export class HttpClientStream extends AsyncEventTarget {
 
     if (split === -1) return
 
-    const head = buffer.buffer.subarray(0, split)
-    const body = buffer.buffer.subarray(split + "\r\n\r\n".length, buffer.offset)
+    const rawHead = buffer.buffer.subarray(0, split)
+    const rawBody = buffer.buffer.subarray(split + "\r\n\r\n".length, buffer.offset)
 
-    const [info, ...rawHeaders] = head.toString().split("\r\n")
-    const [version, statusString, statusText] = info.split(" ")
+    const [rawStatus, ...rawHeaders] = rawHead.toString().split("\r\n")
+    const [version, statusString, statusText] = rawStatus.split(" ")
 
     const status = Number(statusString)
     const headers = new Headers(rawHeaders.map(it => Strings.splitOnFirst(it, ": ")))
 
-    await this.dispatchEvent(new MessageEvent("body", { data: { headers, status, statusText } }))
+    const msgEvent = new MessageEvent("body", { data: { headers, status, statusText } })
+    await this.dispatchEvent(msgEvent)
 
     const transfer = this.getTransferFromHeaders(headers)
     const compression = await this.getCompressionFromHeaders(headers)
 
     this.state = { type: "headed", version, transfer, compression }
 
-    return body
+    return rawBody
   }
 
   private async onReadUnlenghted(chunk: Uint8Array, controller: TransformStreamDefaultController<Uint8Array>) {
