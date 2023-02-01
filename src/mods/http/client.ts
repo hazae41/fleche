@@ -381,7 +381,7 @@ export class HttpClientStream extends AsyncEventTarget {
     headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
     head += `\r\n`
 
-    console.debug("->", head.length, head)
+    // console.debug("->", head.length, head)
     controller.enqueue(Bytes.fromUtf8(head))
   }
 
