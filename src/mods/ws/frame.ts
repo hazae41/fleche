@@ -64,9 +64,10 @@ export class Frame {
     binary.writeUint8(0)
     binary.writeUint8(0)
 
-    const opcode = Binary.allocUnsafe(1)
-    opcode.writeUint8(this.opcode)
-    binary.write(unpack(opcode.bytes).slice(4)) // 8 - 4
+    const opcodeBytes = Binary.allocUnsafe(1)
+    opcodeBytes.writeUint8(this.opcode)
+    const opcodeBits = unpack(opcodeBytes.bytes)
+    binary.write(opcodeBits.subarray(4)) // 8 - 4
 
     const MASK = this.mask
       ? 1
@@ -74,6 +75,7 @@ export class Frame {
     binary.writeUint8(MASK)
 
     this.length!.write(binary)
+    console.log(this.length)
 
     if (this.mask) {
       binary.write(unpack(this.mask))

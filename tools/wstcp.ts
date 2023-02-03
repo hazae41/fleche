@@ -35,7 +35,7 @@ async function onsocket(socket: WebSocket) {
   socket.addEventListener("message", async e => {
     try {
       const buffer = new Uint8Array(e.data)
-      console.debug("->", buffer)
+      console.debug("->", new TextDecoder().decode(buffer))
       await writeAll(target, buffer)
     } catch (_: unknown) {
       socket.close()

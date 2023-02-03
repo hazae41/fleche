@@ -85,16 +85,15 @@ export class WebSocket extends EventTarget {
       .catch(() => { })
 
     http.reading.addEventListener("head", this.onHead.bind(this), { passive: true })
-    http.flush()
   }
 
   public write(chunk: Uint8Array) {
     console.debug(this.#class.name, "->", chunk)
 
     const frame = new Frame(true, Frame.opcodes.binary, chunk, Bytes.random(4))
-    const bytes = pack_right(frame.export())
-    console.debug(this.#class.name, "->2", bytes)
-    this.output!.enqueue(bytes)
+    const frameBits = frame.export()
+    const frameBytes = pack_right(frameBits)
+    this.output!.enqueue(frameBytes)
   }
 
   private async onHead(event: Event) {
@@ -122,21 +121,21 @@ export class WebSocket extends EventTarget {
   }
 
   private async onReadClose() {
-    // console.debug(`${this.#class.name}.onReadClose`)
+    console.debug(`${this.#class.name}.onReadClose`)
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.reading.dispatchEvent(closeEvent)) return
   }
 
   private async onWriteClose() {
-    // console.debug(`${this.#class.name}.onWriteClose`)
+    console.debug(`${this.#class.name}.onWriteClose`)
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.writing.dispatchEvent(closeEvent)) return
   }
 
   private async onReadError(error?: unknown) {
-    // console.debug(`${this.#class.name}.onReadError`, error)
+    console.debug(`${this.#class.name}.onReadError`, error)
 
     try { this.output!.error(error) } catch (e: unknown) { }
 
@@ -147,7 +146,7 @@ export class WebSocket extends EventTarget {
   }
 
   private async onWriteError(error?: unknown) {
-    // console.debug(`${this.#class.name}.onWriteError`, error)
+    console.debug(`${this.#class.name}.onWriteError`, error)
 
     try { this.input!.error(error) } catch (e: unknown) { }
 

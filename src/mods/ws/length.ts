@@ -16,10 +16,11 @@ export class Length {
   }
 
   private write7(binary: Binary) {
-    const length = Binary.allocUnsafe(1)
-    length.writeUint8(this.value)
-
-    binary.write(unpack(length.bytes).subarray(1)) // 8 - 1
+    const lengthBytes = Binary.allocUnsafe(1)
+    lengthBytes.writeUint8(this.value)
+    const lengthBits = unpack(lengthBytes.bytes)
+    console.log("length", lengthBits)
+    binary.write(lengthBits.subarray(1)) // 8 - 1
   }
 
   private write16(binary: Binary) {

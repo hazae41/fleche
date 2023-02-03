@@ -1,5 +1,4 @@
-import { WebSocketStream } from "@hazae41/cadenas"
-import { Fleche } from "@hazae41/fleche"
+import { Fleche, WebSocketStream } from "@hazae41/fleche"
 import { useCallback } from "react"
 
 async function createWebSocketStream() {

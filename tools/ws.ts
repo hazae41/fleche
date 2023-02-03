@@ -23,11 +23,12 @@ async function onconn(conn: Deno.Conn) {
 function onsocket(socket: WebSocket) {
   socket.binaryType = "arraybuffer"
 
+  // socket.send("Hello")
+
   socket.addEventListener("message", e => {
     try {
-      const buffer = new Uint8Array(e.data)
-      console.debug("->", buffer)
-      socket.send(buffer)
+      console.log(e.data)
+      socket.send(e.data)
     } catch (_: unknown) {
       socket.close()
       return

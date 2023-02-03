@@ -5,7 +5,7 @@ import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
 import { AsyncEventTarget } from "libs/events/target.js"
 import { Strings } from "libs/strings/strings.js"
-import { HttpClientCompression, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
+import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
 export interface HttpStreamParams {
   readonly pathname: string,
@@ -76,14 +76,6 @@ export class HttpClientStream extends AsyncEventTarget {
       .catch(() => { })
   }
 
-  public flush() {
-    this.output!.enqueue(Bytes.fromUtf8(`0\r\n\r\n`))
-  }
-
-  public write(chunk: Uint8Array) {
-    this.output!.enqueue(chunk)
-  }
-
   private async onReadClose() {
     // console.debug(`${this.#class.name}.onReadClose`)
 
@@ -120,27 +112,27 @@ export class HttpClientStream extends AsyncEventTarget {
     this.input = controller
   }
 
-  private async onRead(chunk: Uint8Array, controller: TransformStreamDefaultController) {
+  private async onRead(chunk: Uint8Array) {
     console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
 
     if (this.state.type === "heading" || this.state.type === "upgrading") {
       const result = await this.onReadHead(chunk, this.state)
 
-      if (result === undefined)
+      if (!result?.length)
         return
       chunk = result
     }
 
     if (this.state.type === "upgraded")
-      return await this.onReadNoneBody(chunk)
+      return this.input!.enqueue(chunk)
 
     if (this.state.type === "headed") {
       if (this.state.server_transfer.type === "none")
-        return await this.onReadNoneBody(chunk)
+        return await this.onReadNoneBody(chunk, this.state)
       if (this.state.server_transfer.type === "lengthed")
-        return await this.onReadLenghtedBody(chunk)
+        return await this.onReadLenghtedBody(chunk, this.state)
       if (this.state.server_transfer.type === "chunked")
-        return await this.onReadChunkedBody(chunk)
+        return await this.onReadChunkedBody(chunk, this.state)
     }
 
     throw new Error(`Invalid state`)
@@ -229,32 +221,28 @@ export class HttpClientStream extends AsyncEventTarget {
     return rawBody
   }
 
-  private async onReadNoneBody(chunk: Uint8Array) {
-    if (this.state.type !== "headed")
-      throw new Error("Invalid state")
-    if (this.state.server_transfer.type !== "none")
+  private async onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState) {
+    if (state.server_transfer.type !== "none")
       throw new Error("Invalid state")
 
-    const { server_compression: compression } = this.state
+    const { server_compression } = state
 
-    if (compression.type === "gzip") {
-      compression.decoder.write(chunk)
-      compression.decoder.flush()
+    if (server_compression.type === "gzip") {
+      server_compression.decoder.write(chunk)
+      server_compression.decoder.flush()
 
-      const dchunk = compression.decoder.read()
+      const dchunk = server_compression.decoder.read()
       this.input!.enqueue(dchunk)
     } else {
       this.input!.enqueue(chunk)
     }
   }
 
-  private async onReadLenghtedBody(chunk: Uint8Array) {
-    if (this.state.type !== "headed")
-      throw new Error("Invalid state")
-    if (this.state.server_transfer.type !== "lengthed")
+  private async onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState) {
+    if (state.server_transfer.type !== "lengthed")
       throw new Error("Invalid state")
 
-    const { server_transfer, server_compression } = this.state
+    const { server_transfer, server_compression } = state
 
     server_transfer.offset += chunk.length
 
@@ -282,13 +270,11 @@ export class HttpClientStream extends AsyncEventTarget {
     }
   }
 
-  private async onReadChunkedBody(chunk: Uint8Array) {
-    if (this.state.type !== "headed")
-      throw new Error("Invalid state")
-    if (this.state.server_transfer.type !== "chunked")
+  private async onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState) {
+    if (state.server_transfer.type !== "chunked")
       throw new Error("Invalid state")
 
-    const { server_transfer, server_compression } = this.state
+    const { server_transfer, server_compression } = state
     const { buffer } = server_transfer
 
     buffer.write(chunk)
@@ -345,8 +331,7 @@ export class HttpClientStream extends AsyncEventTarget {
 
     const { method, pathname, headers } = this.params
 
-    let head = ``
-    head += `${method} ${pathname} HTTP/1.1\r\n`
+    let head = `${method} ${pathname} HTTP/1.1\r\n`
     headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
     head += `\r\n`
 
@@ -368,7 +353,7 @@ export class HttpClientStream extends AsyncEventTarget {
     console.debug(this.#class.name, "->", chunk)
 
     if (this.state.type === "upgrading" || this.state.type === "upgraded")
-      return await this.onWriteNone(chunk)
+      return this.output!.enqueue(chunk)
 
     if (this.state.type === "heading" || this.state.type === "headed") {
       if (this.state.client_transfer.type === "none")
@@ -381,7 +366,6 @@ export class HttpClientStream extends AsyncEventTarget {
   }
 
   private async onWriteNone(chunk: Uint8Array) {
-    console.debug(this.#class.name, "->", chunk)
     this.output!.enqueue(chunk)
   }
 
@@ -395,6 +379,12 @@ export class HttpClientStream extends AsyncEventTarget {
   }
 
   private async onWriteFlush(controller: TransformStreamDefaultController<Uint8Array>) {
-    this.flush()
+    if (this.state.type !== "heading")
+      return
+
+    if (this.state.client_transfer.type === "none")
+      return this.output!.enqueue(Bytes.fromUtf8(`\r\n`))
+    if (this.state.client_transfer.type === "chunked")
+      return this.output!.enqueue(Bytes.fromUtf8(`0\r\n\r\n`))
   }
 }
