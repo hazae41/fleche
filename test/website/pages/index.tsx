@@ -39,9 +39,7 @@ export default function Home() {
         ws2.addEventListener("error", err)
       })
 
-      console.log("yay")
-
-      ws2.write(new Uint8Array([1, 2, 3]))
+      ws2.send("Hello world")
     } catch (e: unknown) {
       console.error(e)
     }

@@ -21,15 +21,11 @@ export class WebSocket extends EventTarget {
   public readonly reading = new AsyncEventTarget()
   public readonly writing = new AsyncEventTarget()
 
-  public readonly readable: ReadableStream<Uint8Array>
-  public readonly writable: WritableStream<Uint8Array>
+  private readonly reader: WritableStream<Uint8Array>
+  private readonly writer: ReadableStream<Uint8Array>
 
-  private readonly reader: TransformStream<Uint8Array>
-  private readonly writer: TransformStream<Uint8Array>
-  private readonly piper: TransformStream<Uint8Array>
-
-  private input?: TransformStreamDefaultController<Uint8Array>
-  private output?: TransformStreamDefaultController<Uint8Array>
+  private input?: WritableStreamDefaultController
+  private output?: ReadableStreamDefaultController<Uint8Array>
 
   private readonly key = Bytes.toBase64(Bytes.random(16))
 
@@ -54,46 +50,35 @@ export class WebSocket extends EventTarget {
 
     const http = new HttpClientStream(stream, { pathname, method: "GET", headers })
 
-    this.reader = new TransformStream({
+    this.reader = new WritableStream<Uint8Array>({
       start: this.onReadStart.bind(this),
-      transform: this.onRead.bind(this)
+      write: this.onRead.bind(this)
     })
 
-    this.writer = new TransformStream<Uint8Array>({
-      start: this.onWriteStart.bind(this),
-      transform: this.onWrite.bind(this),
+    this.writer = new ReadableStream<Uint8Array>({
+      start: this.onWriteStart.bind(this)
     })
-
-    this.piper = new TransformStream<Uint8Array>()
-
-    this.readable = this.piper.readable
-    this.writable = this.writer.writable
 
     http.readable
-      .pipeTo(this.reader.writable, { signal })
+      .pipeTo(this.reader, { signal })
       .then(this.onReadClose.bind(this))
       .catch(this.onReadError.bind(this))
 
-    this.writer.readable
+    this.writer
       .pipeTo(http.writable, { signal })
       .then(this.onWriteClose.bind(this))
       .catch(this.onWriteError.bind(this))
 
-    this.reader.readable
-      .pipeTo(this.piper.writable)
-      .then(() => { })
-      .catch(() => { })
-
     http.reading.addEventListener("head", this.onHead.bind(this), { passive: true })
   }
 
-  public write(chunk: Uint8Array) {
-    console.debug(this.#class.name, "->", chunk)
+  public send(data: string | Uint8Array) {
+    console.debug(this.#class.name, "->", data)
 
-    const frame = new Frame(true, Frame.opcodes.binary, chunk, Bytes.random(4))
-    const frameBits = frame.export()
-    const frameBytes = pack_right(frameBits)
-    this.output!.enqueue(frameBytes)
+    const frame = typeof data === "string"
+      ? new Frame(true, Frame.opcodes.text, Bytes.fromUtf8(data), Bytes.random(4))
+      : new Frame(true, Frame.opcodes.binary, data, Bytes.random(4))
+    this.output!.enqueue(pack_right(frame.export()))
   }
 
   private async onHead(event: Event) {
@@ -162,24 +147,27 @@ export class WebSocket extends EventTarget {
     this.dispatchEvent(closeEvent)
   }
 
-  private async onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
+  private async onReadStart(controller: WritableStreamDefaultController) {
     await Naberius.initBundledOnce()
 
     this.input = controller
   }
 
-  private async onRead(chunk: Uint8Array) {
-    console.debug(this.#class.name, "<-", chunk)
-    const bits = new Binary(unpack(chunk))
-    const frame = Frame.read(bits)
-    console.log(frame)
-  }
-
-  private async onWriteStart(controller: TransformStreamDefaultController<Uint8Array>) {
+  private async onWriteStart(controller: ReadableStreamDefaultController<Uint8Array>) {
     this.output = controller
   }
 
-  private async onWrite(chunk: Uint8Array) {
-    this.write(chunk)
+  private async onRead(chunk: Uint8Array) {
+    console.debug(this.#class.name, "<-", chunk)
+
+    const bits = new Binary(unpack(chunk))
+    const frame = Frame.read(bits)
+    console.log(frame)
+
+    if (frame.opcode === Frame.opcodes.binary)
+      this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
+    if (frame.opcode === Frame.opcodes.text)
+      this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
   }
+
 }
