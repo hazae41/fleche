@@ -25,6 +25,10 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
 
   if (!headers.has("Host"))
     headers.set("Host", host)
+  if (!headers.has("Transfer-Encoding"))
+    headers.set("Transfer-Encoding", "chunked")
+  if (!headers.has("Accept-Encoding"))
+    headers.set("Accept-Encoding", "gzip")
 
   const http = new HttpClientStream(stream, { pathname, method, headers, signal })
 
@@ -54,9 +58,9 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
 
   try {
     signal.addEventListener("abort", onAbort, { passive: true })
-    http.read.addEventListener("close", onClose, { passive: true })
-    http.read.addEventListener("error", onError, { passive: true })
-    http.read.addEventListener("head", onHead, { passive: true })
+    http.reading.addEventListener("close", onClose, { passive: true })
+    http.reading.addEventListener("error", onError, { passive: true })
+    http.reading.addEventListener("head", onHead, { passive: true })
 
     let body = request.body
 
@@ -80,8 +84,8 @@ export async function fetch(input: RequestInfo, init: RequestInit & FetchParams)
     return await future.promise
   } finally {
     signal.removeEventListener("abort", onAbort)
-    http.read.removeEventListener("close", onClose)
-    http.read.removeEventListener("error", onError)
-    http.read.removeEventListener("head", onHead)
+    http.reading.removeEventListener("close", onClose)
+    http.reading.removeEventListener("error", onError)
+    http.reading.removeEventListener("head", onHead)
   }
 }

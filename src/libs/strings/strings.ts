@@ -1,5 +1,9 @@
 export namespace Strings {
 
+  export function equalsIgnoreCase(a?: string | null, b?: string | null) {
+    return a?.toLowerCase() === b?.toLowerCase()
+  }
+
   export function splitOnFirst(text: string, splitter: string): [string, string] {
     const index = text.indexOf(splitter)
 

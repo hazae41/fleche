@@ -54,4 +54,31 @@ export namespace Bytes {
   export function concat(list: Uint8Array[]) {
     return fromView(Buffer.concat(list))
   }
+
+  export function mask(bytes: Uint8Array, mask: Uint8Array, mod: number) {
+    return bytes.map((x, i) => x ^ mask[i % mod])
+  }
+
+
+  function toBit(value: number, index: number, result: Uint8Array) {
+
+  }
+
+  /**
+   * Expand each byte into 8 one-or-zero bytes
+   * @param bytes 
+   */
+  export function toBits(bytes: Uint8Array) {
+    const bits = new Uint8Array(bytes.length * 8)
+    bytes.reduce((p, x) => p + x.toString(2).padStart(8, "0"), "")
+
+  }
+
+  /**
+   * Shrink each 8 one-or-zero bytes into 1 byte
+   * @param bytes 
+   */
+  export function fromBits(bytes: Uint8Array) {
+
+  }
 }
