@@ -31,15 +31,15 @@ export default function Home() {
       // const text = await res.text()
       // console.log(text)
 
-      const ws2 = new Fleche.WebSocket("ws://localhost", undefined, { stream: tcp })
+      const ws = new Fleche.WebSocket("ws://localhost", undefined, { stream: tcp })
 
       await new Promise((ok, err) => {
-        ws2.addEventListener("open", ok)
-        ws2.addEventListener("close", err)
-        ws2.addEventListener("error", err)
+        ws.addEventListener("open", ok)
+        ws.addEventListener("close", err)
+        ws.addEventListener("error", err)
       })
 
-      ws2.send("Hello world")
+      ws.send("Hello world")
     } catch (e: unknown) {
       console.error(e)
     }
