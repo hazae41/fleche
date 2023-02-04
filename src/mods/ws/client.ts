@@ -72,13 +72,17 @@ export class WebSocket extends EventTarget {
     http.reading.addEventListener("head", this.onHead.bind(this), { passive: true })
   }
 
+  private write(frame: Frame) {
+    this.output!.enqueue(pack_right(frame.export()))
+  }
+
   public send(data: string | Uint8Array) {
     console.debug(this.#class.name, "->", data)
 
     const frame = typeof data === "string"
       ? new Frame(true, Frame.opcodes.text, Bytes.fromUtf8(data), Bytes.random(4))
       : new Frame(true, Frame.opcodes.binary, data, Bytes.random(4))
-    this.output!.enqueue(pack_right(frame.export()))
+    this.write(frame)
   }
 
   private async onHead(event: Event) {
@@ -162,12 +166,25 @@ export class WebSocket extends EventTarget {
 
     const bits = new Binary(unpack(chunk))
     const frame = Frame.read(bits)
-    console.log(frame)
 
+    if (frame.opcode === Frame.opcodes.ping)
+      return await this.onReadPing(frame)
     if (frame.opcode === Frame.opcodes.binary)
-      this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
+      return await this.onReadBinary(frame)
     if (frame.opcode === Frame.opcodes.text)
-      this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
+      return await this.onReadText(frame)
+  }
+
+  private async onReadPing(frame: Frame) {
+    this.write(new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4)))
+  }
+
+  private async onReadBinary(frame: Frame) {
+    this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
+  }
+
+  private async onReadText(frame: Frame) {
+    this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
   }
 
 }
