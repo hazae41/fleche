@@ -1,6 +1,6 @@
 import { Binary } from "@hazae41/binary"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
-import { Length } from "mods/ws/length.js"
+import { Length } from "mods/websocket/length.js"
 
 export class Frame {
 
