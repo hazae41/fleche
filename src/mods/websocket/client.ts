@@ -1,4 +1,4 @@
-import { Cursor, Writable } from "@hazae41/binary";
+import { Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { CloseEvent } from "libs/events/close.js";
@@ -164,8 +164,7 @@ export class WebSocket extends EventTarget {
   async #onRead(chunk: Uint8Array) {
     console.debug(this.#class.name, "<-", chunk)
 
-    const bits = new Cursor(unpack(chunk))
-    const frame = Frame.read(bits)
+    const frame = Readable.fromBytes(Frame, unpack(chunk))
 
     if (frame.opcode === Frame.opcodes.ping)
       return await this.#onReadPing(frame)
