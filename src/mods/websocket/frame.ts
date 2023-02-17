@@ -1,4 +1,4 @@
-import { Binary } from "@hazae41/binary"
+import { Cursor } from "@hazae41/binary"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Length } from "mods/websocket/length.js"
 
@@ -51,7 +51,7 @@ export class Frame {
    * Write as bits
    * @param binary bits
    */
-  write(binary: Binary) {
+  write(binary: Cursor) {
     const FIN = this.final
       ? 1
       : 0
@@ -64,7 +64,7 @@ export class Frame {
     binary.writeUint8(0)
     binary.writeUint8(0)
 
-    const opcodeBytes = Binary.allocUnsafe(1)
+    const opcodeBytes = Cursor.allocUnsafe(1)
     opcodeBytes.writeUint8(this.opcode)
     const opcodeBits = unpack(opcodeBytes.bytes)
     binary.write(opcodeBits.subarray(4)) // 8 - 4
@@ -90,7 +90,7 @@ export class Frame {
    * @param binary bits
    * @returns 
    */
-  static read(binary: Binary) {
+  static read(binary: Cursor) {
     /**
      * FIN
      */
@@ -127,7 +127,7 @@ export class Frame {
    * @returns bits
    */
   export() {
-    const bits = Binary.allocUnsafe(this.size())
+    const bits = Cursor.allocUnsafe(this.size())
     this.write(bits)
     return bits.bytes
   }

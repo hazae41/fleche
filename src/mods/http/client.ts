@@ -1,6 +1,6 @@
-import { Binary } from "@hazae41/binary"
+import { Cursor } from "@hazae41/binary"
+import { Bytes } from "@hazae41/bytes"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
-import { Bytes } from "libs/bytes/bytes.js"
 import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
 import { AsyncEventTarget } from "libs/events/target.js"
@@ -142,7 +142,7 @@ export class HttpClientStream extends AsyncEventTarget {
     const type = headers.get("Transfer-Encoding")
 
     if (type === "chunked") {
-      const buffer = Binary.allocUnsafe(64 * 1024)
+      const buffer = Cursor.allocUnsafe(64 * 1024)
       return { type, buffer }
     }
 
@@ -338,7 +338,7 @@ export class HttpClientStream extends AsyncEventTarget {
     console.debug(this.#class.name, "->", head.length, head)
     controller.enqueue(Bytes.fromUtf8(head))
 
-    const buffer = Binary.allocUnsafe(64 * 1024)
+    const buffer = Cursor.allocUnsafe(64 * 1024)
 
     if (Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade")) {
       this.state = { type: "upgrading", buffer }

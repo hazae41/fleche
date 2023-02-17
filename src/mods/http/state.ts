@@ -1,4 +1,4 @@
-import { Binary } from "@hazae41/binary"
+import { Cursor } from "@hazae41/binary"
 import { GzDecoder, GzEncoder } from "@hazae41/foras"
 
 export type HttpState =
@@ -14,7 +14,7 @@ export interface HttpNoneState {
 
 export interface HttpUpgradingState {
   readonly type: "upgrading",
-  readonly buffer: Binary
+  readonly buffer: Cursor
 }
 
 export interface HttpUpgradedState {
@@ -25,7 +25,7 @@ export interface HttpHeadingState {
   readonly type: "heading",
   readonly client_transfer: HttpTransfer
   readonly client_compression: HttpClientCompression
-  readonly buffer: Binary
+  readonly buffer: Cursor
 }
 
 export interface HttpHeadedState {
@@ -43,7 +43,7 @@ export type HttpTransfer =
 
 export interface HttpChunkedTransfer {
   readonly type: "chunked",
-  readonly buffer: Binary
+  readonly buffer: Cursor
 }
 
 export interface HttpNoneTransfer {
