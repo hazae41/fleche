@@ -3,6 +3,7 @@ import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Length } from "mods/websocket/length.js"
 
 export class Frame {
+  readonly #class = Frame
 
   static readonly opcodes = {
     continuation: 0,
@@ -24,10 +25,14 @@ export class Frame {
     readonly mask?: Uint8Array,
   ) { }
 
-  private length?: Length
+  #data?: {
+    length: Length
+  }
 
-  prepare() {
-    this.length = new Length(this.payload.length)
+  #prepare() {
+    const length = new Length(this.payload.length)
+
+    return this.#data = { length }
   }
 
   /**
@@ -35,14 +40,14 @@ export class Frame {
    * @returns bits
    */
   size() {
-    this.prepare()
+    const { length } = this.#prepare()
 
     return 0
       + 1 // FIN
       + 3 // RSV
       + 4 // opcode
       + 1 // MASK
-      + this.length!.size()
+      + length.size()
       + (this.mask?.length ?? 0) * 8
       + this.payload.length * 8
   }
@@ -52,6 +57,11 @@ export class Frame {
    * @param binary bits
    */
   write(binary: Cursor) {
+    if (!this.#data)
+      throw new Error(`Unprepared ${this.#class.name}`)
+
+    const { length } = this.#data
+
     const FIN = this.final
       ? 1
       : 0
@@ -74,8 +84,7 @@ export class Frame {
       : 0
     binary.writeUint8(MASK)
 
-    this.length!.write(binary)
-    console.log(this.length)
+    length.write(binary)
 
     if (this.mask) {
       binary.write(unpack(this.mask))
@@ -122,13 +131,4 @@ export class Frame {
     }
   }
 
-  /**
-   * Bits as Uint8Array
-   * @returns bits
-   */
-  export() {
-    const bits = Cursor.allocUnsafe(this.size())
-    this.write(bits)
-    return bits.bytes
-  }
 }

@@ -15,7 +15,7 @@ export class Length {
     return 7 + 64
   }
 
-  private write7(binary: Cursor) {
+  #write7(binary: Cursor) {
     const lengthBytes = Cursor.allocUnsafe(1)
     lengthBytes.writeUint8(this.value)
     const lengthBits = unpack(lengthBytes.bytes)
@@ -23,7 +23,7 @@ export class Length {
     binary.write(lengthBits.subarray(1)) // 8 - 1
   }
 
-  private write16(binary: Cursor) {
+  #write16(binary: Cursor) {
     const length = Cursor.allocUnsafe(1 + 2)
     length.writeUint8(126)
     length.writeUint16(this.value)
@@ -31,7 +31,7 @@ export class Length {
     binary.write(unpack(length.bytes).subarray(1)) // (8 + 16) - 1
   }
 
-  private write64(binary: Cursor) {
+  #write64(binary: Cursor) {
     const length = Cursor.allocUnsafe(1 + 8)
     length.writeUint8(127)
     length.writeUint64(BigInt(this.value))
@@ -41,10 +41,10 @@ export class Length {
 
   write(binary: Cursor) {
     if (this.value < 126)
-      return this.write7(binary)
+      return this.#write7(binary)
     if (this.value < 65535)
-      return this.write16(binary)
-    return this.write64(binary)
+      return this.#write16(binary)
+    return this.#write64(binary)
   }
 
   static read(binary: Cursor) {

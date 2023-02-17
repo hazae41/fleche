@@ -1,4 +1,4 @@
-import { Cursor } from "@hazae41/binary";
+import { Cursor, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { CloseEvent } from "libs/events/close.js";
@@ -18,16 +18,16 @@ export interface WebSocketParams {
 export class WebSocket extends EventTarget {
   readonly #class = WebSocket
 
-  public readonly reading = new AsyncEventTarget()
-  public readonly writing = new AsyncEventTarget()
+  readonly reading = new AsyncEventTarget()
+  readonly writing = new AsyncEventTarget()
 
-  private readonly reader: WritableStream<Uint8Array>
-  private readonly writer: ReadableStream<Uint8Array>
+  readonly #reader: WritableStream<Uint8Array>
+  readonly #writer: ReadableStream<Uint8Array>
 
-  private input?: WritableStreamDefaultController
-  private output?: ReadableStreamDefaultController<Uint8Array>
+  #input?: WritableStreamDefaultController
+  #output?: ReadableStreamDefaultController<Uint8Array>
 
-  private readonly key = Bytes.toBase64(Bytes.random(16))
+  readonly #key = Bytes.toBase64(Bytes.random(16))
 
   constructor(
     readonly url: string | URL,
@@ -45,47 +45,47 @@ export class WebSocket extends EventTarget {
       headers.set("Host", host)
     headers.set("Connection", "Upgrade")
     headers.set("Upgrade", "websocket")
-    headers.set("Sec-WebSocket-Key", this.key)
+    headers.set("Sec-WebSocket-Key", this.#key)
     headers.set("Sec-WebSocket-Version", "13")
 
     const http = new HttpClientStream(stream, { pathname, method: "GET", headers })
 
-    this.reader = new WritableStream<Uint8Array>({
-      start: this.onReadStart.bind(this),
-      write: this.onRead.bind(this)
+    this.#reader = new WritableStream<Uint8Array>({
+      start: this.#onReadStart.bind(this),
+      write: this.#onRead.bind(this)
     })
 
-    this.writer = new ReadableStream<Uint8Array>({
-      start: this.onWriteStart.bind(this)
+    this.#writer = new ReadableStream<Uint8Array>({
+      start: this.#onWriteStart.bind(this)
     })
 
     http.readable
-      .pipeTo(this.reader, { signal })
-      .then(this.onReadClose.bind(this))
-      .catch(this.onReadError.bind(this))
+      .pipeTo(this.#reader, { signal })
+      .then(this.#onReadClose.bind(this))
+      .catch(this.#onReadError.bind(this))
 
-    this.writer
+    this.#writer
       .pipeTo(http.writable, { signal })
-      .then(this.onWriteClose.bind(this))
-      .catch(this.onWriteError.bind(this))
+      .then(this.#onWriteClose.bind(this))
+      .catch(this.#onWriteError.bind(this))
 
-    http.reading.addEventListener("head", this.onHead.bind(this), { passive: true })
+    http.reading.addEventListener("head", this.#onHead.bind(this), { passive: true })
   }
 
-  private write(frame: Frame) {
-    this.output!.enqueue(pack_right(frame.export()))
+  #write(frame: Frame) {
+    this.#output!.enqueue(pack_right(Writable.toBytes(frame)))
   }
 
-  public send(data: string | Uint8Array) {
+  send(data: string | Uint8Array) {
     console.debug(this.#class.name, "->", data)
 
     const frame = typeof data === "string"
       ? new Frame(true, Frame.opcodes.text, Bytes.fromUtf8(data), Bytes.random(4))
       : new Frame(true, Frame.opcodes.binary, data, Bytes.random(4))
-    this.write(frame)
+    this.#write(frame)
   }
 
-  private async onHead(event: Event) {
+  async #onHead(event: Event) {
     const msgEvent = event as MessageEvent<ResponseInit>
     const { headers, status } = msgEvent.data
 
@@ -99,7 +99,7 @@ export class WebSocket extends EventTarget {
     if (!Strings.equalsIgnoreCase(headers2.get("Upgrade"), "websocket"))
       throw new Error(`Invalid Upgrade header value`)
 
-    const prehash = Bytes.concat([Bytes.fromUtf8(this.key), ACCEPT_SUFFIX])
+    const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
     if (headers2.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
@@ -109,41 +109,41 @@ export class WebSocket extends EventTarget {
     this.dispatchEvent(openEvent)
   }
 
-  private async onReadClose() {
+  async #onReadClose() {
     console.debug(`${this.#class.name}.onReadClose`)
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.reading.dispatchEvent(closeEvent)) return
   }
 
-  private async onWriteClose() {
+  async #onWriteClose() {
     console.debug(`${this.#class.name}.onWriteClose`)
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.writing.dispatchEvent(closeEvent)) return
   }
 
-  private async onReadError(error?: unknown) {
+  async #onReadError(error?: unknown) {
     console.debug(`${this.#class.name}.onReadError`, error)
 
-    try { this.output!.error(error) } catch (e: unknown) { }
+    try { this.#output!.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.reading.dispatchEvent(errorEvent)) return
 
-    await this.onError(error)
+    await this.#onError(error)
   }
 
-  private async onWriteError(error?: unknown) {
+  async #onWriteError(error?: unknown) {
     console.debug(`${this.#class.name}.onWriteError`, error)
 
-    try { this.input!.error(error) } catch (e: unknown) { }
+    try { this.#input!.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.writing.dispatchEvent(errorEvent)) return
   }
 
-  private async onError(error?: unknown) {
+  async #onError(error?: unknown) {
     const errorEvent = new ErrorEvent("error", { error })
     this.dispatchEvent(errorEvent)
 
@@ -151,39 +151,39 @@ export class WebSocket extends EventTarget {
     this.dispatchEvent(closeEvent)
   }
 
-  private async onReadStart(controller: WritableStreamDefaultController) {
+  async #onReadStart(controller: WritableStreamDefaultController) {
     await Naberius.initBundledOnce()
 
-    this.input = controller
+    this.#input = controller
   }
 
-  private async onWriteStart(controller: ReadableStreamDefaultController<Uint8Array>) {
-    this.output = controller
+  async #onWriteStart(controller: ReadableStreamDefaultController<Uint8Array>) {
+    this.#output = controller
   }
 
-  private async onRead(chunk: Uint8Array) {
+  async #onRead(chunk: Uint8Array) {
     console.debug(this.#class.name, "<-", chunk)
 
     const bits = new Cursor(unpack(chunk))
     const frame = Frame.read(bits)
 
     if (frame.opcode === Frame.opcodes.ping)
-      return await this.onReadPing(frame)
+      return await this.#onReadPing(frame)
     if (frame.opcode === Frame.opcodes.binary)
-      return await this.onReadBinary(frame)
+      return await this.#onReadBinary(frame)
     if (frame.opcode === Frame.opcodes.text)
-      return await this.onReadText(frame)
+      return await this.#onReadText(frame)
   }
 
-  private async onReadPing(frame: Frame) {
-    this.write(new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4)))
+  async #onReadPing(frame: Frame) {
+    this.#write(new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4)))
   }
 
-  private async onReadBinary(frame: Frame) {
+  async #onReadBinary(frame: Frame) {
     this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
   }
 
-  private async onReadText(frame: Frame) {
+  async #onReadText(frame: Frame) {
     this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
   }
 
