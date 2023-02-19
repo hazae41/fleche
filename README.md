@@ -1,15 +1,14 @@
 <div align="center">
-<img width="500" src="https://user-images.githubusercontent.com/4405263/211164253-c5f977ea-358a-4ad0-a8ab-9c4cdd4137e1.png" />
+<img src="https://user-images.githubusercontent.com/4405263/219943458-f5fa0f94-8dfd-4f8e-9fb5-df780a600dd4.png" />
 </div>
-<h3 align="center">
-Zero-copy HTTP protocol for the web 🏎️
-</h3>
 
 ```bash
 npm i @hazae41/fleche
 ```
 
 [**Node Package 📦**](https://www.npmjs.com/package/@hazae41/fleche)
+
+## Features
 
 ### Current features
 - 100% TypeScript and ESM
@@ -20,14 +19,14 @@ npm i @hazae41/fleche
 - AbortSignal cancellation
 - Compatible with fetch
 - HTTP 1.1
+- WebSockets
 
 ### [Upcoming features](https://github.com/sponsors/hazae41)
 - More HTTP 1.1 features
 - Brotli compression
 - HTTP 2, HTTP 3 (QUIC)
-- WebSockets
 
-### Usage
+## Usage
 
 ```tsx
 import { fetch } from "@hazae41/fleche"
