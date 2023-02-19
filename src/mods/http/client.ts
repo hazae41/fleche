@@ -113,7 +113,7 @@ export class HttpClientStream extends AsyncEventTarget {
   }
 
   async #onRead(chunk: Uint8Array) {
-    console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
+    // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
 
     if (this.#state.type === "heading" || this.#state.type === "upgrading") {
       const result = await this.#onReadHead(chunk, this.#state)
@@ -335,7 +335,7 @@ export class HttpClientStream extends AsyncEventTarget {
     headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
     head += `\r\n`
 
-    console.debug(this.#class.name, "->", head.length, head)
+    // console.debug(this.#class.name, "->", head.length, head)
     controller.enqueue(Bytes.fromUtf8(head))
 
     const buffer = Cursor.allocUnsafe(64 * 1024)
@@ -350,7 +350,7 @@ export class HttpClientStream extends AsyncEventTarget {
   }
 
   async #onWrite(chunk: Uint8Array) {
-    console.debug(this.#class.name, "->", chunk)
+    // console.debug(this.#class.name, "->", chunk)
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded")
       return this.#output!.enqueue(chunk)
@@ -374,11 +374,11 @@ export class HttpClientStream extends AsyncEventTarget {
     const length = text.length.toString(16)
     const line = `${length}\r\n${text}\r\n`
 
-    console.debug(this.#class.name, "->", line.length, line)
+    // console.debug(this.#class.name, "->", line.length, line)
     this.#output!.enqueue(Bytes.fromUtf8(line))
   }
 
-  async #onWriteFlush(controller: TransformStreamDefaultController<Uint8Array>) {
+  async #onWriteFlush() {
     if (this.#state.type !== "heading")
       return
 

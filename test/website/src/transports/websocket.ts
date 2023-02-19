@@ -1,4 +1,18 @@
-import { Future } from "libs/futures/future.js"
+import { Future } from "../futures/future.js"
+
+export async function createWebSocketStream(url: string) {
+  const websocket = new WebSocket(url)
+
+  websocket.binaryType = "arraybuffer"
+
+  await new Promise((ok, err) => {
+    websocket.addEventListener("open", ok)
+    websocket.addEventListener("error", err)
+  })
+
+  await new Promise(ok => setTimeout(ok, 100))
+  return new WebSocketStream(websocket)
+}
 
 async function tryClose(websocket: WebSocket) {
   const close = new Future<void>()
@@ -64,7 +78,6 @@ export class WebSocketSource implements UnderlyingSource<Uint8Array> {
 
     const onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
       const chunk = new Uint8Array(msgEvent.data)
-      console.debug("ws", "<-", chunk)
       try { controller.enqueue(chunk) } catch (e: unknown) { }
     }
 
@@ -142,7 +155,6 @@ export class WebSocketSink implements UnderlyingSink<Uint8Array> {
   }
 
   async write(chunk: Uint8Array) {
-    console.debug("ws", "->", chunk)
     this.websocket.send(chunk)
   }
 

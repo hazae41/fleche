@@ -1,25 +1,12 @@
-import { Fleche, WebSocketStream } from "@hazae41/fleche"
+import { Fleche } from "@hazae41/fleche"
 import { useCallback } from "react"
-
-async function createWebSocketStream() {
-  const websocket = new WebSocket("ws://localhost:8080")
-
-  websocket.binaryType = "arraybuffer"
-
-  await new Promise((ok, err) => {
-    websocket.addEventListener("open", ok)
-    websocket.addEventListener("error", err)
-  })
-
-  await new Promise(ok => setTimeout(ok, 100))
-  return new WebSocketStream(websocket)
-}
+import { createWebSocketStream } from "../src/transports/websocket"
 
 export default function Home() {
 
   const onClick = useCallback(async () => {
     try {
-      const tcp = await createWebSocketStream()
+      const tcp = await createWebSocketStream("ws://localhost:8080")
 
       // const headers = new Headers({ "Content-Type": "application/json" })
       // const body = JSON.stringify({ "jsonrpc": "2.0", "method": "web3_clientVersion", "params": [], "id": 67 })
