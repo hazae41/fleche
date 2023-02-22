@@ -27,9 +27,6 @@ export class HttpClientStream extends AsyncEventTarget {
   readonly #reader: StreamPair<Uint8Array, Opaque>
   readonly #writer: StreamPair<Writable, Uint8Array>
 
-  #input?: TransformStreamDefaultController<Uint8Array>
-  #output?: TransformStreamDefaultController<Uint8Array>
-
   #state: HttpState = { type: "none" }
 
   /**
@@ -100,7 +97,7 @@ export class HttpClientStream extends AsyncEventTarget {
   async #onReadError(error?: unknown) {
     // console.debug(`${this.#class.name}.onReadError`, error)
 
-    try { this.#output!.error(error) } catch (e: unknown) { }
+    try { this.#writer.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.reading.dispatchEvent(errorEvent)) return
@@ -109,7 +106,7 @@ export class HttpClientStream extends AsyncEventTarget {
   async #onWriteError(error?: unknown) {
     // console.debug(`${this.#class.name}.onWriteError`, error)
 
-    try { this.#input!.error(error) } catch (e: unknown) { }
+    try { this.#writer.error(error) } catch (e: unknown) { }
 
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.writing.dispatchEvent(errorEvent)) return
@@ -129,7 +126,7 @@ export class HttpClientStream extends AsyncEventTarget {
     }
 
     if (this.#state.type === "upgraded")
-      return this.#input!.enqueue(bytes)
+      return this.#reader.enqueue(bytes)
 
     if (this.#state.type === "headed") {
       if (this.#state.server_transfer.type === "none")
@@ -237,9 +234,9 @@ export class HttpClientStream extends AsyncEventTarget {
       server_compression.decoder.flush()
 
       const dchunk = server_compression.decoder.read()
-      this.#input!.enqueue(dchunk)
+      this.#reader.enqueue(dchunk)
     } else {
-      this.#input!.enqueue(chunk)
+      this.#reader.enqueue(chunk)
     }
   }
 
@@ -259,19 +256,19 @@ export class HttpClientStream extends AsyncEventTarget {
       server_compression.decoder.flush()
 
       const dchunk = server_compression.decoder.read()
-      this.#input!.enqueue(dchunk)
+      this.#reader.enqueue(dchunk)
     } else {
-      this.#input!.enqueue(chunk)
+      this.#reader.enqueue(chunk)
     }
 
     if (server_transfer.offset === server_transfer.length) {
 
       if (server_compression.type === "gzip") {
         const fchunk = server_compression.decoder.finish()
-        this.#input!.enqueue(fchunk)
+        this.#reader.enqueue(fchunk)
       }
 
-      this.#input!.terminate()
+      this.#reader.terminate()
     }
   }
 
@@ -300,10 +297,10 @@ export class HttpClientStream extends AsyncEventTarget {
 
         if (server_compression.type === "gzip") {
           const fchunk = server_compression.decoder.finish()
-          if (fchunk.length) this.#input!.enqueue(fchunk)
+          if (fchunk.length) this.#reader.enqueue(fchunk)
         }
 
-        this.#input!.terminate()
+        this.#reader.terminate()
         return
       }
 
@@ -319,9 +316,9 @@ export class HttpClientStream extends AsyncEventTarget {
         server_compression.decoder.flush()
 
         const dchunk2 = server_compression.decoder.read()
-        if (dchunk2.length) this.#input!.enqueue(dchunk2)
+        if (dchunk2.length) this.#reader.enqueue(dchunk2)
       } else {
-        this.#input!.enqueue(chunk2)
+        this.#reader.enqueue(chunk2)
       }
 
       buffer.offset = 0
@@ -356,7 +353,7 @@ export class HttpClientStream extends AsyncEventTarget {
     // console.debug(this.#class.name, "->", chunk)
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded")
-      return this.#output!.enqueue(chunk)
+      return this.#writer.enqueue(new Opaque(chunk))
 
     if (this.#state.type === "heading" || this.#state.type === "headed") {
       if (this.#state.client_transfer.type === "none")
@@ -369,7 +366,7 @@ export class HttpClientStream extends AsyncEventTarget {
   }
 
   async #onWriteNone(chunk: Uint8Array) {
-    this.#output!.enqueue(chunk)
+    this.#writer.enqueue(new Opaque(chunk))
   }
 
   async #onWriteChunked(chunk: Uint8Array) {
@@ -378,7 +375,7 @@ export class HttpClientStream extends AsyncEventTarget {
     const line = `${length}\r\n${text}\r\n`
 
     // console.debug(this.#class.name, "->", line.length, line)
-    this.#output!.enqueue(Bytes.fromUtf8(line))
+    this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
   }
 
   async #onWriteFlush() {
@@ -386,8 +383,8 @@ export class HttpClientStream extends AsyncEventTarget {
       return
 
     if (this.#state.client_transfer.type === "none")
-      return this.#output!.enqueue(Bytes.fromUtf8(`\r\n`))
+      return this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`\r\n`)))
     if (this.#state.client_transfer.type === "chunked")
-      return this.#output!.enqueue(Bytes.fromUtf8(`0\r\n\r\n`))
+      return this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`0\r\n\r\n`)))
   }
 }
