@@ -1,9 +1,10 @@
+import { Opaque, Writable } from "@hazae41/binary"
 import { AbortEvent } from "libs/events/abort.js"
 import { Future } from "libs/futures/future.js"
 import { HttpClientStream } from "mods/http/client.js"
 
 export interface FetchParams {
-  stream: ReadableWritablePair<Uint8Array>
+  stream: ReadableWritablePair<Opaque, Writable>
 }
 
 /**

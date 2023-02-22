@@ -1,9 +1,10 @@
-import { Cursor } from "@hazae41/binary"
+import { Cursor, Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
 import { AsyncEventTarget } from "libs/events/target.js"
+import { StreamPair } from "libs/streams/pair.js"
 import { Strings } from "libs/strings/strings.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
@@ -23,9 +24,8 @@ export class HttpClientStream extends AsyncEventTarget {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 
-  readonly #reader: TransformStream<Uint8Array>
-  readonly #writer: TransformStream<Uint8Array>
-  readonly #piper: TransformStream<Uint8Array>
+  readonly #reader: StreamPair<Uint8Array, Opaque>
+  readonly #writer: StreamPair<Writable, Uint8Array>
 
   #input?: TransformStreamDefaultController<Uint8Array>
   #output?: TransformStreamDefaultController<Uint8Array>
@@ -37,43 +37,50 @@ export class HttpClientStream extends AsyncEventTarget {
    * @param stream substream
    */
   constructor(
-    readonly stream: ReadableWritablePair<Uint8Array>,
+    readonly stream: ReadableWritablePair<Opaque, Writable>,
     readonly params: HttpStreamParams
   ) {
     super()
 
     const { signal } = params
 
-    this.#reader = new TransformStream<Uint8Array>({
-      start: this.#onReadStart.bind(this),
-      transform: this.#onRead.bind(this),
+    // this.#reader = new TransformStream<Uint8Array>({
+    //   start: this.#onReadStart.bind(this),
+    //   transform: this.#onRead.bind(this),
+    // })
+
+    // this.#writer = new TransformStream<Uint8Array>({
+    //   start: this.#onWriteStart.bind(this),
+    //   transform: this.#onWrite.bind(this),
+    //   flush: this.#onWriteFlush.bind(this),
+    // })
+
+    this.#reader = new StreamPair({}, {
+      write: this.#onRead.bind(this)
     })
 
-    this.#writer = new TransformStream<Uint8Array>({
-      start: this.#onWriteStart.bind(this),
-      transform: this.#onWrite.bind(this),
-      flush: this.#onWriteFlush.bind(this),
+    this.#writer = new StreamPair({
+      start: this.#onWriteStart.bind(this)
+    }, {
+      write: this.#onWrite.bind(this),
+      close: this.#onWriteFlush.bind(this)
     })
 
-    this.#piper = new TransformStream<Uint8Array>()
+    const readers = this.#reader.pipe()
+    const writers = this.#writer.pipe()
 
-    this.readable = this.#piper.readable
-    this.writable = this.#writer.writable
+    this.readable = readers.readable
+    this.writable = writers.writable
 
     stream.readable
-      .pipeTo(this.#reader.writable, { signal })
+      .pipeTo(readers.writable, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
 
-    this.#writer.readable
+    writers.readable
       .pipeTo(stream.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
-
-    this.#reader.readable
-      .pipeTo(this.#piper.writable)
-      .then(() => { })
-      .catch(() => { })
   }
 
   async #onReadClose() {
@@ -108,31 +115,29 @@ export class HttpClientStream extends AsyncEventTarget {
     if (!await this.writing.dispatchEvent(errorEvent)) return
   }
 
-  async #onReadStart(controller: TransformStreamDefaultController<Uint8Array>) {
-    this.#input = controller
-  }
-
-  async #onRead(chunk: Uint8Array) {
+  async #onRead(chunk: Opaque) {
     // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
 
+    let bytes = chunk.bytes
+
     if (this.#state.type === "heading" || this.#state.type === "upgrading") {
-      const result = await this.#onReadHead(chunk, this.#state)
+      const result = await this.#onReadHead(bytes, this.#state)
 
       if (!result?.length)
         return
-      chunk = result
+      bytes = result
     }
 
     if (this.#state.type === "upgraded")
-      return this.#input!.enqueue(chunk)
+      return this.#input!.enqueue(bytes)
 
     if (this.#state.type === "headed") {
       if (this.#state.server_transfer.type === "none")
-        return await this.#onReadNoneBody(chunk, this.#state)
+        return await this.#onReadNoneBody(bytes, this.#state)
       if (this.#state.server_transfer.type === "lengthed")
-        return await this.#onReadLenghtedBody(chunk, this.#state)
+        return await this.#onReadLenghtedBody(bytes, this.#state)
       if (this.#state.server_transfer.type === "chunked")
-        return await this.#onReadChunkedBody(chunk, this.#state)
+        return await this.#onReadChunkedBody(bytes, this.#state)
     }
 
     throw new Error(`Invalid state`)
@@ -326,9 +331,7 @@ export class HttpClientStream extends AsyncEventTarget {
     }
   }
 
-  async #onWriteStart(controller: TransformStreamDefaultController<Uint8Array>) {
-    this.#output = controller
-
+  async #onWriteStart(controller: ReadableStreamDefaultController<Writable>) {
     const { method, pathname, headers } = this.params
 
     let head = `${method} ${pathname} HTTP/1.1\r\n`
@@ -336,7 +339,7 @@ export class HttpClientStream extends AsyncEventTarget {
     head += `\r\n`
 
     // console.debug(this.#class.name, "->", head.length, head)
-    controller.enqueue(Bytes.fromUtf8(head))
+    controller.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
     const buffer = Cursor.allocUnsafe(64 * 1024)
 

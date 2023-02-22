@@ -1,4 +1,4 @@
-import { Readable, Writable } from "@hazae41/binary";
+import { Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { CloseEvent } from "libs/events/close.js";
@@ -11,7 +11,7 @@ import { Frame } from "./frame.js";
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
 
 export interface WebSocketParams {
-  readonly stream: ReadableWritablePair<Uint8Array>
+  readonly stream: ReadableWritablePair<Opaque, Writable>
   readonly signal?: AbortSignal
 }
 
