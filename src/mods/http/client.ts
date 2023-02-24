@@ -4,7 +4,7 @@ import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { CloseEvent } from "libs/events/close.js"
 import { ErrorEvent } from "libs/events/error.js"
 import { AsyncEventTarget } from "libs/events/target.js"
-import { StreamPair } from "libs/streams/pair.js"
+import { SuperTransformStream } from "libs/streams/transform.js"
 import { Strings } from "libs/strings/strings.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
@@ -24,8 +24,8 @@ export class HttpClientStream extends AsyncEventTarget {
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
 
-  readonly #reader: StreamPair<Uint8Array, Opaque>
-  readonly #writer: StreamPair<Writable, Uint8Array>
+  readonly #reader: SuperTransformStream<Opaque, Uint8Array>
+  readonly #writer: SuperTransformStream<Uint8Array, Writable>
 
   #state: HttpState = { type: "none" }
 
@@ -52,62 +52,75 @@ export class HttpClientStream extends AsyncEventTarget {
     //   flush: this.#onWriteFlush.bind(this),
     // })
 
-    this.#reader = new StreamPair({}, {
-      write: this.#onRead.bind(this)
+    this.#reader = new SuperTransformStream({
+      transform: this.#onRead.bind(this)
     })
 
-    this.#writer = new StreamPair({
-      start: this.#onWriteStart.bind(this)
-    }, {
-      write: this.#onWrite.bind(this),
-      close: this.#onWriteFlush.bind(this)
+    this.#writer = new SuperTransformStream({
+      start: this.#onWriteStart.bind(this),
+      transform: this.#onWrite.bind(this),
+      flush: this.#onWriteFlush.bind(this)
     })
 
-    const readers = this.#reader.pipe()
-    const writers = this.#writer.pipe()
+    const read = this.#reader.create()
+    const write = this.#writer.create()
+    const piper = new TransformStream()
 
-    this.readable = readers.readable
-    this.writable = writers.writable
+    this.readable = piper.readable
+    this.writable = write.writable
 
     stream.readable
-      .pipeTo(readers.writable, { signal })
+      .pipeTo(read.writable, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
 
-    writers.readable
+    write.readable
       .pipeTo(stream.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
+
+    read.readable
+      .pipeTo(piper.writable)
+      .then(() => { })
+      .catch(() => { })
   }
 
   async #onReadClose() {
-    // console.debug(`${this.#class.name}.onReadClose`)
+    console.debug(`${this.#class.name}.onReadClose`)
+
+    this.#reader.close()
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.reading.dispatchEvent(closeEvent)) return
   }
 
+  async #onReadError(reason?: unknown) {
+    console.debug(`${this.#class.name}.onReadError`, reason)
+
+    this.#reader.close(reason)
+    this.#writer.error(reason)
+
+    const error = new Error(`Errored`, { cause: reason })
+    const errorEvent = new ErrorEvent("error", { error })
+    if (!await this.reading.dispatchEvent(errorEvent)) return
+  }
+
   async #onWriteClose() {
-    // console.debug(`${this.#class.name}.onWriteClose`)
+    console.debug(`${this.#class.name}.onWriteClose`)
+
+    this.#writer.close()
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.writing.dispatchEvent(closeEvent)) return
   }
 
-  async #onReadError(error?: unknown) {
-    // console.debug(`${this.#class.name}.onReadError`, error)
+  async #onWriteError(reason?: unknown) {
+    console.debug(`${this.#class.name}.onWriteError`, reason)
 
-    try { this.#writer.error(error) } catch (e: unknown) { }
+    this.#writer.close(reason)
+    this.#reader.error(reason)
 
-    const errorEvent = new ErrorEvent("error", { error })
-    if (!await this.reading.dispatchEvent(errorEvent)) return
-  }
-
-  async #onWriteError(error?: unknown) {
-    // console.debug(`${this.#class.name}.onWriteError`, error)
-
-    try { this.#writer.error(error) } catch (e: unknown) { }
-
+    const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.writing.dispatchEvent(errorEvent)) return
   }
@@ -328,7 +341,7 @@ export class HttpClientStream extends AsyncEventTarget {
     }
   }
 
-  async #onWriteStart(controller: ReadableStreamDefaultController<Writable>) {
+  async #onWriteStart() {
     const { method, pathname, headers } = this.params
 
     let head = `${method} ${pathname} HTTP/1.1\r\n`
@@ -336,7 +349,7 @@ export class HttpClientStream extends AsyncEventTarget {
     head += `\r\n`
 
     // console.debug(this.#class.name, "->", head.length, head)
-    controller.enqueue(new Opaque(Bytes.fromUtf8(head)))
+    this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
     const buffer = Cursor.allocUnsafe(64 * 1024)
 
