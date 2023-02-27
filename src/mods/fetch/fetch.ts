@@ -14,7 +14,7 @@ export interface FetchParams {
  * @param init.stream Transport substream
  * @returns 
  */
-export async function fetch(input: RequestInfo, init: RequestInit & FetchParams) {
+export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams) {
   const { stream, ...init2 } = init
 
   const request = new Request(input, init2)
