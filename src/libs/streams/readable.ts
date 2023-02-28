@@ -6,7 +6,7 @@ export class SuperReadableStream<R>  {
 
   constructor(
     readonly subsource: UnderlyingDefaultSource<R>,
-    readonly strategy: QueuingStrategy<R>
+    readonly strategy?: QueuingStrategy<R>
   ) {
     this.source = new SuperUnderlyingDefaultSource(subsource)
   }

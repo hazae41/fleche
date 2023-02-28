@@ -34,9 +34,9 @@ async function onsocket(socket: WebSocket) {
 
   socket.addEventListener("message", async e => {
     try {
-      const buffer = new Uint8Array(e.data)
-      console.debug("->", new TextDecoder().decode(buffer))
-      await writeAll(target, buffer)
+      const bytes = new Uint8Array(e.data)
+      console.debug("->", bytes)
+      await writeAll(target, bytes)
     } catch (_: unknown) {
       socket.close()
       return
@@ -45,15 +45,15 @@ async function onsocket(socket: WebSocket) {
 
   while (true) {
     try {
-      const output = await read(target)
+      const bytes = await read(target)
 
-      if (!output) {
+      if (!bytes) {
         socket.close()
         return
       }
 
-      console.debug("<-", output)
-      socket.send(output)
+      console.debug("<-", bytes)
+      socket.send(bytes)
     } catch (_: unknown) {
       socket.close()
       return

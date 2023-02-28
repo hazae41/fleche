@@ -19,7 +19,6 @@ export class Length {
     const lengthBytes = Cursor.allocUnsafe(1)
     lengthBytes.writeUint8(this.value)
     const lengthBits = unpack(lengthBytes.bytes)
-    console.log("length", lengthBits)
     binary.write(lengthBits.subarray(1)) // 8 - 1
   }
 

@@ -6,7 +6,7 @@ export class SuperWritableStream<W> {
 
   constructor(
     readonly subsink: UnderlyingSink<W>,
-    readonly strategy: QueuingStrategy<W>
+    readonly strategy?: QueuingStrategy<W>
   ) {
     this.sink = new SuperUnderlyingSink(subsink)
   }

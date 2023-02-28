@@ -4,6 +4,8 @@ import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { CloseEvent } from "libs/events/close.js";
 import { ErrorEvent } from "libs/events/error.js";
 import { AsyncEventTarget } from "libs/events/target.js";
+import { SuperReadableStream } from "libs/streams/readable.js";
+import { SuperWritableStream } from "libs/streams/writable.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientStream } from "mods/http/client.js";
 import { Frame } from "./frame.js";
@@ -21,11 +23,8 @@ export class WebSocket extends EventTarget {
   readonly reading = new AsyncEventTarget()
   readonly writing = new AsyncEventTarget()
 
-  readonly #reader: WritableStream<Uint8Array>
-  readonly #writer: ReadableStream<Uint8Array>
-
-  #input?: WritableStreamDefaultController
-  #output?: ReadableStreamDefaultController<Uint8Array>
+  readonly #reader: SuperWritableStream<Uint8Array>
+  readonly #writer: SuperReadableStream<Uint8Array>
 
   readonly #key = Bytes.toBase64(Bytes.random(16))
 
@@ -43,6 +42,7 @@ export class WebSocket extends EventTarget {
 
     if (!headers.has("Host"))
       headers.set("Host", host)
+
     headers.set("Connection", "Upgrade")
     headers.set("Upgrade", "websocket")
     headers.set("Sec-WebSocket-Key", this.#key)
@@ -50,21 +50,22 @@ export class WebSocket extends EventTarget {
 
     const http = new HttpClientStream(stream, { pathname, method: "GET", headers })
 
-    this.#reader = new WritableStream<Uint8Array>({
+    this.#reader = new SuperWritableStream({
       start: this.#onReadStart.bind(this),
       write: this.#onRead.bind(this)
     })
 
-    this.#writer = new ReadableStream<Uint8Array>({
-      start: this.#onWriteStart.bind(this)
-    })
+    this.#writer = new SuperReadableStream<Uint8Array>({})
+
+    const reader = this.#reader.start()
+    const writer = this.#writer.start()
 
     http.readable
-      .pipeTo(this.#reader, { signal })
+      .pipeTo(reader, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
 
-    this.#writer
+    writer
       .pipeTo(http.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
@@ -73,7 +74,9 @@ export class WebSocket extends EventTarget {
   }
 
   #write(frame: Frame) {
-    this.#output!.enqueue(pack_right(Writable.toBytes(frame)))
+    const bits = Writable.toBytes(frame)
+    const bytes = pack_right(bits)
+    this.#writer.enqueue(bytes)
   }
 
   send(data: string | Uint8Array) {
@@ -82,7 +85,7 @@ export class WebSocket extends EventTarget {
     const frame = typeof data === "string"
       ? new Frame(true, Frame.opcodes.text, Bytes.fromUtf8(data), Bytes.random(4))
       : new Frame(true, Frame.opcodes.binary, data, Bytes.random(4))
-    this.#write(frame)
+    this.#write(frame.prepare())
   }
 
   async #onHead(event: Event) {
@@ -112,6 +115,8 @@ export class WebSocket extends EventTarget {
   async #onReadClose() {
     console.debug(`${this.#class.name}.onReadClose`)
 
+    this.#reader.closed = {}
+
     const closeEvent = new CloseEvent("close", {})
     if (!await this.reading.dispatchEvent(closeEvent)) return
   }
@@ -119,31 +124,40 @@ export class WebSocket extends EventTarget {
   async #onWriteClose() {
     console.debug(`${this.#class.name}.onWriteClose`)
 
+    this.#writer.closed = {}
+
     const closeEvent = new CloseEvent("close", {})
     if (!await this.writing.dispatchEvent(closeEvent)) return
   }
 
-  async #onReadError(error?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, error)
+  async #onReadError(reason?: unknown) {
+    console.debug(`${this.#class.name}.onReadError`, reason)
 
-    try { this.#output!.error(error) } catch (e: unknown) { }
+    this.#reader.closed = { reason }
+    this.#writer.error(reason)
 
+    const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.reading.dispatchEvent(errorEvent)) return
 
-    await this.#onError(error)
+    await this.#onError(reason)
   }
 
-  async #onWriteError(error?: unknown) {
-    console.debug(`${this.#class.name}.onWriteError`, error)
+  async #onWriteError(reason?: unknown) {
+    console.debug(`${this.#class.name}.onWriteError`, reason)
 
-    try { this.#input!.error(error) } catch (e: unknown) { }
+    this.#writer.closed = { reason }
+    this.#reader.error(reason)
 
+    const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
     if (!await this.writing.dispatchEvent(errorEvent)) return
+
+    await this.#onError(reason)
   }
 
-  async #onError(error?: unknown) {
+  async #onError(reason?: unknown) {
+    const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
     this.dispatchEvent(errorEvent)
 
@@ -151,14 +165,8 @@ export class WebSocket extends EventTarget {
     this.dispatchEvent(closeEvent)
   }
 
-  async #onReadStart(controller: WritableStreamDefaultController) {
+  async #onReadStart() {
     await Naberius.initBundledOnce()
-
-    this.#input = controller
-  }
-
-  async #onWriteStart(controller: ReadableStreamDefaultController<Uint8Array>) {
-    this.#output = controller
   }
 
   async #onRead(chunk: Uint8Array) {
@@ -175,7 +183,8 @@ export class WebSocket extends EventTarget {
   }
 
   async #onReadPing(frame: Frame) {
-    this.#write(new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4)))
+    const pong = new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4))
+    this.#write(pong.prepare())
   }
 
   async #onReadBinary(frame: Frame) {

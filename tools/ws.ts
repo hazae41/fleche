@@ -1,4 +1,3 @@
-
 const server = Deno.listen({ port: 8081 })
 
 for await (const conn of server)
@@ -22,8 +21,6 @@ async function onconn(conn: Deno.Conn) {
 
 function onsocket(socket: WebSocket) {
   socket.binaryType = "arraybuffer"
-
-  // socket.send("Hello")
 
   socket.addEventListener("message", e => {
     try {

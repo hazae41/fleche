@@ -29,10 +29,10 @@ export class Frame {
     length: Length
   }
 
-  #prepare() {
+  prepare() {
     const length = new Length(this.payload.length)
-
-    return this.#data = { length }
+    this.#data = { length }
+    return this
   }
 
   /**
@@ -40,7 +40,9 @@ export class Frame {
    * @returns bits
    */
   size() {
-    const { length } = this.#prepare()
+    if (!this.#data)
+      throw new Error(`Unprepared ${this.#class.name}`)
+    const { length } = this.#data
 
     return 0
       + 1 // FIN
@@ -59,17 +61,10 @@ export class Frame {
   write(binary: Cursor) {
     if (!this.#data)
       throw new Error(`Unprepared ${this.#class.name}`)
-
     const { length } = this.#data
 
-    const FIN = this.final
-      ? 1
-      : 0
-    binary.writeUint8(FIN)
+    binary.writeUint8(Number(this.final))
 
-    /**
-     * RSV
-     */
     binary.writeUint8(0)
     binary.writeUint8(0)
     binary.writeUint8(0)
@@ -79,10 +74,8 @@ export class Frame {
     const opcodeBits = unpack(opcodeBytes.bytes)
     binary.write(opcodeBits.subarray(4)) // 8 - 4
 
-    const MASK = this.mask
-      ? 1
-      : 0
-    binary.writeUint8(MASK)
+    const masked = Boolean(this.mask)
+    binary.writeUint8(Number(masked))
 
     length.write(binary)
 
@@ -100,21 +93,12 @@ export class Frame {
    * @returns 
    */
   static read(binary: Cursor) {
-    /**
-     * FIN
-     */
     const final = Boolean(binary.readUint8())
 
-    /**
-     * RSV
-     */
     binary.offset += 3
 
     const opcode = binary.read(4).reduce((p, n) => (p << 1) | n)
 
-    /**
-     * MASK
-     */
     const masked = Boolean(binary.readUint8())
 
     const length = Length.read(binary)
@@ -127,6 +111,7 @@ export class Frame {
       return new this(final, opcode, payload, mask)
     } else {
       const payload = pack_left(binary.read(length.value * 8))
+
       return new this(final, opcode, payload)
     }
   }
