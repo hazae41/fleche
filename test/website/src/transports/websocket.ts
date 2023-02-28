@@ -78,7 +78,7 @@ export class WebSocketSource implements UnderlyingDefaultSource<Opaque> {
 
     const onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
       const bytes = new Uint8Array(msgEvent.data)
-      // console.debug("ws <-", chunk)
+      console.debug("ws <-", bytes.length)
       controller.enqueue(new Opaque(bytes))
     }
 

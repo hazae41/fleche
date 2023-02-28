@@ -1,9 +1,10 @@
-import { Opaque, Readable, Writable } from "@hazae41/binary";
+import { Cursor, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { CloseEvent } from "libs/events/close.js";
 import { ErrorEvent } from "libs/events/error.js";
 import { AsyncEventTarget } from "libs/events/target.js";
+import { Iterables } from "libs/iterables/iterables.js";
 import { SuperReadableStream } from "libs/streams/readable.js";
 import { SuperWritableStream } from "libs/streams/writable.js";
 import { Strings } from "libs/strings/strings.js";
@@ -25,6 +26,20 @@ export class WebSocket extends EventTarget {
 
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
+
+  /**
+   * Frame buffer (bits) (16MB)
+   */
+  readonly #frame = Cursor.allocUnsafe(16 * 1024 * 1024 * 8)
+
+  readonly #current = new class {
+    opcode?: number
+
+    /**
+     * Message buffer (bytes) (16MB)
+     */
+    readonly buffer = Cursor.allocUnsafe(16 * 1024 * 1024)
+  }
 
   readonly #key = Bytes.toBase64(Bytes.random(16))
 
@@ -79,13 +94,30 @@ export class WebSocket extends EventTarget {
     this.#writer.enqueue(bytes)
   }
 
-  send(data: string | Uint8Array) {
-    console.debug(this.#class.name, "->", data)
+  #split(type: number, data: Uint8Array) {
+    const chunks = new Cursor(data).split(32768)
+    const peeker = Iterables.peek(chunks)
 
-    const frame = typeof data === "string"
-      ? new Frame(true, Frame.opcodes.text, Bytes.fromUtf8(data), Bytes.random(4))
-      : new Frame(true, Frame.opcodes.binary, data, Bytes.random(4))
+    const first = peeker.next()
+    if (first.done) return
+
+    const { current, next } = first.value
+    console.debug(this.#class.name, "->", current.length)
+    const frame = new Frame(Boolean(next.done), type, current, Bytes.random(4))
     this.#write(frame.prepare())
+
+    for (const { current, next } of peeker) {
+      console.debug(this.#class.name, "-> (continuation)", current.length)
+      const frame = new Frame(Boolean(next.done), Frame.opcodes.continuation, current, Bytes.random(4))
+      this.#write(frame.prepare())
+    }
+  }
+
+  send(data: string | Uint8Array) {
+    if (typeof data === "string")
+      return this.#split(Frame.opcodes.text, Bytes.fromUtf8(data))
+    else
+      return this.#split(Frame.opcodes.binary, data)
   }
 
   async #onHead(event: Event) {
@@ -170,29 +202,89 @@ export class WebSocket extends EventTarget {
   }
 
   async #onRead(chunk: Uint8Array) {
-    console.debug(this.#class.name, "<-", chunk)
+    // console.debug(this.#class.name, "<-", chunk.length)
 
-    const frame = Readable.fromBytes(Frame, unpack(chunk))
+    const bits = unpack(chunk)
 
-    if (frame.opcode === Frame.opcodes.ping)
-      return await this.#onReadPing(frame)
-    if (frame.opcode === Frame.opcodes.binary)
-      return await this.#onReadBinary(frame)
-    if (frame.opcode === Frame.opcodes.text)
-      return await this.#onReadText(frame)
+    if (this.#frame.offset)
+      await this.#onReadBuffered(bits)
+    else
+      await this.#onReadDirect(bits)
   }
 
-  async #onReadPing(frame: Frame) {
+  async #onReadBuffered(chunk: Uint8Array) {
+    this.#frame.write(chunk)
+    const full = this.#frame.before
+
+    this.#frame.offset = 0
+    await this.#onReadDirect(full)
+  }
+
+  async #onReadDirect(chunk: Uint8Array) {
+    const cursor = new Cursor(chunk)
+
+    while (cursor.remaining) {
+      let frame = Readable.tryRead(Frame, cursor)
+
+      if (!frame) {
+        this.#frame.write(cursor.after)
+        break
+      }
+
+      await this.#onFrame(frame)
+    }
+  }
+
+  async #onFrame(frame: Frame) {
+    // console.log("<-", frame)
+
+    if (!frame.final)
+      return await this.#onNonfinalFrame(frame)
+
+    if (frame.opcode === Frame.opcodes.continuation)
+      return await this.#onContinuationFrame(frame)
+    if (frame.opcode === Frame.opcodes.ping)
+      return await this.#onPingFrame(frame)
+    if (frame.opcode === Frame.opcodes.binary)
+      return await this.#onBinaryFrame(frame)
+    if (frame.opcode === Frame.opcodes.text)
+      return await this.#onTextFrame(frame)
+  }
+
+  async #onNonfinalFrame(frame: Frame) {
+    if (frame.opcode !== Frame.opcodes.continuation) {
+      if (this.#current.opcode !== undefined)
+        throw new Error(`Already received a start frame`)
+      this.#current.opcode = frame.opcode
+    }
+
+    this.#current.buffer.write(frame.payload)
+  }
+
+  async #onPingFrame(frame: Frame) {
     const pong = new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4))
     this.#write(pong.prepare())
   }
 
-  async #onReadBinary(frame: Frame) {
+  async #onBinaryFrame(frame: Frame) {
     this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
   }
 
-  async #onReadText(frame: Frame) {
+  async #onTextFrame(frame: Frame) {
     this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
+  }
+
+  async #onContinuationFrame(frame: Frame) {
+    this.#current.buffer.write(frame.payload)
+
+    if (this.#current.opcode === undefined)
+      throw new Error(`Received continuation frame without start frame`)
+
+    const payload = new Uint8Array(this.#current.buffer.bytes)
+    const full = new Frame(true, this.#current.opcode, payload)
+    this.#current.opcode = undefined
+    this.#current.buffer.offset = 0
+    await this.#onFrame(full)
   }
 
 }

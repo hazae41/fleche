@@ -1,3 +1,4 @@
+import { Bytes } from "@hazae41/bytes"
 import { Fleche } from "@hazae41/fleche"
 import { useCallback } from "react"
 import { createWebSocketStream } from "../src/transports/websocket"
@@ -15,9 +16,14 @@ export default function Home() {
         ws.addEventListener("error", err)
       })
 
-      ws.addEventListener("message", console.log)
+      ws.addEventListener("message", (e: MessageEvent<ArrayBuffer>) => {
+        const bytes = new Uint8Array(e.data)
+        console.log(bytes[123])
+      })
 
-      ws.send("Hello world")
+      const bytes = Bytes.allocUnsafe(8 * 1024 * 1024)
+      bytes[123] = 123
+      ws.send(bytes)
     } catch (e: unknown) {
       console.error(e)
     }

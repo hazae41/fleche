@@ -56,61 +56,64 @@ export class Frame {
 
   /**
    * Write as bits
-   * @param binary bits
+   * @param cursor bits
    */
-  write(binary: Cursor) {
+  write(cursor: Cursor) {
     if (!this.#data)
       throw new Error(`Unprepared ${this.#class.name}`)
     const { length } = this.#data
 
-    binary.writeUint8(Number(this.final))
+    cursor.writeUint8(Number(this.final))
 
-    binary.writeUint8(0)
-    binary.writeUint8(0)
-    binary.writeUint8(0)
+    cursor.writeUint8(0)
+    cursor.writeUint8(0)
+    cursor.writeUint8(0)
 
     const opcodeBytes = Cursor.allocUnsafe(1)
     opcodeBytes.writeUint8(this.opcode)
     const opcodeBits = unpack(opcodeBytes.bytes)
-    binary.write(opcodeBits.subarray(4)) // 8 - 4
+    cursor.write(opcodeBits.subarray(4)) // 8 - 4
 
     const masked = Boolean(this.mask)
-    binary.writeUint8(Number(masked))
+    cursor.writeUint8(Number(masked))
 
-    length.write(binary)
+    length.write(cursor)
 
     if (this.mask) {
-      binary.write(unpack(this.mask))
+      cursor.write(unpack(this.mask))
       xor_mod(this.payload, this.mask)
     }
 
-    binary.write(unpack(this.payload))
+    cursor.write(unpack(this.payload))
   }
 
   /**
    * Read from bits
-   * @param binary bits
+   * @param cursor bits
    * @returns 
    */
-  static read(binary: Cursor) {
-    const final = Boolean(binary.readUint8())
+  static read(cursor: Cursor) {
+    const final = Boolean(cursor.readUint8())
 
-    binary.offset += 3
+    cursor.offset += 3
 
-    const opcode = binary.read(4).reduce((p, n) => (p << 1) | n)
+    const opcode = cursor.read(4).reduce((p, n) => (p << 1) | n)
 
-    const masked = Boolean(binary.readUint8())
+    const masked = Boolean(cursor.readUint8())
 
-    const length = Length.read(binary)
+    const length = Length.read(cursor)
+
+    if (cursor.remaining < length.value)
+      throw new Error(`Not enough remaining bytes`)
 
     if (masked) {
-      const mask = pack_left(binary.read(4 * 8))
-      const payload = pack_left(binary.read(length.value * 8))
+      const mask = pack_left(cursor.read(4 * 8))
+      const payload = pack_left(cursor.read(length.value * 8))
       xor_mod(payload, mask)
 
       return new this(final, opcode, payload, mask)
     } else {
-      const payload = pack_left(binary.read(length.value * 8))
+      const payload = pack_left(cursor.read(length.value * 8))
 
       return new this(final, opcode, payload)
     }
