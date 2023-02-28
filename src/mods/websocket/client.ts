@@ -38,7 +38,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
 
   readonly #key = Bytes.toBase64(Bytes.random(16))
 
-  #readyState = WebSocket.CLOSED
+  #readyState = WebSocket.CONNECTING
 
   binaryType: BinaryType = "blob"
 
@@ -199,6 +199,8 @@ export class WebSocketClient extends EventTarget implements WebSocket {
 
     if (headers2.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
       throw new Error(`Invalid Sec-WebSocket-Accept header value`)
+
+    this.#readyState = this.OPEN
 
     const openEvent = new Event("open")
     this.dispatchEvent(openEvent)
