@@ -104,9 +104,13 @@ export class WebSocketClient extends EventTarget implements WebSocket {
   }
 
   addEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
-
-  addEventListener(type: string, callback: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions | undefined) {
+  addEventListener(type: string, callback: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void {
     super.addEventListener(type, callback, options)
+  }
+
+  removeEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void {
+    super.removeEventListener(type, listener, options)
   }
 
   get CLOSED() {
@@ -158,11 +162,15 @@ export class WebSocketClient extends EventTarget implements WebSocket {
     }
   }
 
-  send(data: string | Uint8Array) {
+  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
     if (typeof data === "string")
       return this.#split(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
+    else if (data instanceof Blob)
+      return this.#split(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer()))
+    else if ("buffer" in data)
+      return this.#split(WebSocketFrame.opcodes.binary, Bytes.fromView(data))
     else
-      return this.#split(WebSocketFrame.opcodes.binary, data)
+      return this.#split(WebSocketFrame.opcodes.text, new Uint8Array(data))
   }
 
   close(code = 1000, reason?: string): void {
