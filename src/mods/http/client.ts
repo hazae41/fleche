@@ -41,17 +41,6 @@ export class HttpClientStream extends AsyncEventTarget {
 
     const { signal } = params
 
-    // this.#reader = new TransformStream<Uint8Array>({
-    //   start: this.#onReadStart.bind(this),
-    //   transform: this.#onRead.bind(this),
-    // })
-
-    // this.#writer = new TransformStream<Uint8Array>({
-    //   start: this.#onWriteStart.bind(this),
-    //   transform: this.#onWrite.bind(this),
-    //   flush: this.#onWriteFlush.bind(this),
-    // })
-
     this.#reader = new SuperTransformStream({
       transform: this.#onRead.bind(this)
     })
@@ -62,8 +51,8 @@ export class HttpClientStream extends AsyncEventTarget {
       flush: this.#onWriteFlush.bind(this)
     })
 
-    const read = this.#reader.create()
-    const write = this.#writer.create()
+    const read = this.#reader.start()
+    const write = this.#writer.start()
     const piper = new TransformStream()
 
     this.readable = piper.readable
@@ -88,7 +77,7 @@ export class HttpClientStream extends AsyncEventTarget {
   async #onReadClose() {
     console.debug(`${this.#class.name}.onReadClose`)
 
-    this.#reader.close()
+    this.#reader.closed = {}
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.reading.dispatchEvent(closeEvent)) return
@@ -97,7 +86,7 @@ export class HttpClientStream extends AsyncEventTarget {
   async #onReadError(reason?: unknown) {
     console.debug(`${this.#class.name}.onReadError`, reason)
 
-    this.#reader.close(reason)
+    this.#reader.closed = { reason }
     this.#writer.error(reason)
 
     const error = new Error(`Errored`, { cause: reason })
@@ -108,7 +97,7 @@ export class HttpClientStream extends AsyncEventTarget {
   async #onWriteClose() {
     console.debug(`${this.#class.name}.onWriteClose`)
 
-    this.#writer.close()
+    this.#writer.closed = {}
 
     const closeEvent = new CloseEvent("close", {})
     if (!await this.writing.dispatchEvent(closeEvent)) return
@@ -117,7 +106,7 @@ export class HttpClientStream extends AsyncEventTarget {
   async #onWriteError(reason?: unknown) {
     console.debug(`${this.#class.name}.onWriteError`, reason)
 
-    this.#writer.close(reason)
+    this.#writer.closed = { reason }
     this.#reader.error(reason)
 
     const error = new Error(`Errored`, { cause: reason })
