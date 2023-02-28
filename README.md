@@ -44,10 +44,10 @@ function example(stream: ReadableWritablePair<Opaque, Writable>) {
 
 ```tsx
 import { Opaque, Writable } from "@hazae41/binary"
-import { WebSocketClient } from "@hazae41/fleche"
+import { WebSocket } from "@hazae41/fleche"
 
 function example(stream: ReadableWritablePair<Opaque, Writable>) {
-  const socket = new WebSocketClient("wss://example.com", undefined, { stream })
+  const socket = new WebSocket("wss://example.com", undefined, { stream })
 
   // ...
 

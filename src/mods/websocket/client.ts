@@ -19,6 +19,14 @@ export interface WebSocketParams {
   readonly signal?: AbortSignal
 }
 
+export class WebSocketMessageState {
+
+  readonly buffer = Cursor.allocUnsafe(16 * 1024 * 1024)
+
+  opcode?: number
+
+}
+
 export class WebSocketClient extends EventTarget implements WebSocket {
   readonly #class = WebSocketClient
 
@@ -30,11 +38,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
 
   readonly #frame = Cursor.allocUnsafe(16 * 1024 * 1024 * 8)
 
-  readonly #current = new class {
-    opcode?: number
-
-    readonly buffer = Cursor.allocUnsafe(16 * 1024 * 1024)
-  }
+  readonly #current = new WebSocketMessageState()
 
   readonly #key = Bytes.toBase64(Bytes.random(16))
 
@@ -325,7 +329,10 @@ export class WebSocketClient extends EventTarget implements WebSocket {
   }
 
   async #onBinaryFrame(frame: WebSocketFrame) {
-    this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
+    if (this.binaryType === "blob")
+      this.dispatchEvent(new MessageEvent("message", { data: new Blob([frame.payload]) }))
+    else
+      this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
   }
 
   async #onTextFrame(frame: WebSocketFrame) {
