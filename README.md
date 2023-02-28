@@ -19,7 +19,7 @@ npm i @hazae41/fleche
 - AbortSignal cancellation
 - Compatible with fetch
 - HTTP 1.1
-- WebSockets
+- WebSockets 
 
 ### [Upcoming features](https://github.com/sponsors/hazae41)
 - More HTTP 1.1 features
@@ -29,9 +29,10 @@ npm i @hazae41/fleche
 ## Usage
 
 ```tsx
+import { Opaque, Writable } from "@hazae41/binary"
 import { fetch } from "@hazae41/fleche"
 
-function example(stream: ReadableWritablePair<Uint8Array>) {
+function example(stream: ReadableWritablePair<Opaque, Writable>) {
   const res = await fetch("https://example.com", { stream })
 
   if (!res.ok)
@@ -40,3 +41,17 @@ function example(stream: ReadableWritablePair<Uint8Array>) {
   return await res.json()
 }
 ```
+
+```tsx
+import { Opaque, Writable } from "@hazae41/binary"
+import { WebSocketClient } from "@hazae41/fleche"
+
+function example(stream: ReadableWritablePair<Opaque, Writable>) {
+  const socket = new WebSocketClient("wss://example.com", undefined, { stream })
+
+  // ...
+
+  socket.addEventListener("message", e => console.log(e.data))
+
+  socket.send("Hello world")
+}

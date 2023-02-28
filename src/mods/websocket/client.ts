@@ -9,7 +9,8 @@ import { SuperReadableStream } from "libs/streams/readable.js";
 import { SuperWritableStream } from "libs/streams/writable.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientStream } from "mods/http/client.js";
-import { Frame } from "./frame.js";
+import { WebSocketClose } from "./close.js";
+import { WebSocketFrame } from "./frame.js";
 
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
 
@@ -18,8 +19,8 @@ export interface WebSocketParams {
   readonly signal?: AbortSignal
 }
 
-export class WebSocket extends EventTarget {
-  readonly #class = WebSocket
+export class WebSocketClient extends EventTarget implements WebSocket {
+  readonly #class = WebSocketClient
 
   readonly reading = new AsyncEventTarget()
   readonly writing = new AsyncEventTarget()
@@ -27,31 +28,40 @@ export class WebSocket extends EventTarget {
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
 
-  /**
-   * Frame buffer (bits) (16MB)
-   */
   readonly #frame = Cursor.allocUnsafe(16 * 1024 * 1024 * 8)
 
   readonly #current = new class {
     opcode?: number
 
-    /**
-     * Message buffer (bytes) (16MB)
-     */
     readonly buffer = Cursor.allocUnsafe(16 * 1024 * 1024)
   }
 
   readonly #key = Bytes.toBase64(Bytes.random(16))
 
+  #readyState = WebSocket.CLOSED
+
+  binaryType: BinaryType = "blob"
+
+  onclose: ((this: WebSocket, ev: CloseEvent) => any) | null = null
+  onerror: ((this: WebSocket, ev: Event) => any) | null = null
+  onmessage: ((this: WebSocket, ev: MessageEvent<any>) => any) | null = null
+  onopen: ((this: WebSocket, ev: Event) => any) | null = null
+
+  readonly url: string
+  readonly extensions = ""
+  readonly protocol = ""
+
   constructor(
-    readonly url: string | URL,
-    readonly protocols: string | string[] | undefined,
-    readonly params: WebSocketParams
+    url: string | URL,
+    protocols: string | string[] | undefined,
+    params: WebSocketParams
   ) {
     super()
 
-    const { host, pathname } = new URL(url)
+    const { host, pathname, href } = new URL(url)
     const { stream, signal } = params
+
+    this.url = href
 
     const headers = new Headers()
 
@@ -86,15 +96,50 @@ export class WebSocket extends EventTarget {
       .catch(this.#onWriteError.bind(this))
 
     http.reading.addEventListener("head", this.#onHead.bind(this), { passive: true })
+
+    this.addEventListener("close", (e) => this.onclose?.(e))
+    this.addEventListener("error", (e) => this.onerror?.(e))
+    this.addEventListener("message", (e) => this.onmessage?.(e))
+    this.addEventListener("open", (e) => this.onopen?.(e))
   }
 
-  #write(frame: Frame) {
+  addEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+
+  addEventListener(type: string, callback: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions | undefined) {
+    super.addEventListener(type, callback, options)
+  }
+
+  get CLOSED() {
+    return WebSocket.CLOSED
+  }
+
+  get CLOSING() {
+    return WebSocket.CLOSING
+  }
+
+  get CONNECTING() {
+    return WebSocket.CONNECTING
+  }
+
+  get OPEN() {
+    return WebSocket.OPEN
+  }
+
+  get readyState() {
+    return this.#readyState
+  }
+
+  get bufferedAmount() {
+    return 0
+  }
+
+  #write(frame: WebSocketFrame) {
     const bits = Writable.toBytes(frame)
     const bytes = pack_right(bits)
     this.#writer.enqueue(bytes)
   }
 
-  #split(type: number, data: Uint8Array) {
+  #split(opcode: number, data: Uint8Array) {
     const chunks = new Cursor(data).split(32768)
     const peeker = Iterables.peek(chunks)
 
@@ -103,21 +148,30 @@ export class WebSocket extends EventTarget {
 
     const { current, next } = first.value
     console.debug(this.#class.name, "->", current.length)
-    const frame = new Frame(Boolean(next.done), type, current, Bytes.random(4))
+    const frame = new WebSocketFrame(Boolean(next.done), opcode, current, Bytes.random(4))
     this.#write(frame.prepare())
 
     for (const { current, next } of peeker) {
       console.debug(this.#class.name, "-> (continuation)", current.length)
-      const frame = new Frame(Boolean(next.done), Frame.opcodes.continuation, current, Bytes.random(4))
+      const frame = new WebSocketFrame(Boolean(next.done), WebSocketFrame.opcodes.continuation, current, Bytes.random(4))
       this.#write(frame.prepare())
     }
   }
 
   send(data: string | Uint8Array) {
     if (typeof data === "string")
-      return this.#split(Frame.opcodes.text, Bytes.fromUtf8(data))
+      return this.#split(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
     else
-      return this.#split(Frame.opcodes.binary, data)
+      return this.#split(WebSocketFrame.opcodes.binary, data)
+  }
+
+  close(code = 1000, reason?: string): void {
+    const payload = Writable.toBytes(new WebSocketClose(code, reason))
+    const frame = new WebSocketFrame(true, WebSocketFrame.opcodes.close, payload, Bytes.random(4))
+    this.#write(frame.prepare())
+    this.#readyState = this.CLOSING
+    this.#reader.error(reason)
+    this.#writer.close()
   }
 
   async #onHead(event: Event) {
@@ -224,7 +278,7 @@ export class WebSocket extends EventTarget {
     const cursor = new Cursor(chunk)
 
     while (cursor.remaining) {
-      let frame = Readable.tryRead(Frame, cursor)
+      let frame = Readable.tryRead(WebSocketFrame, cursor)
 
       if (!frame) {
         this.#frame.write(cursor.after)
@@ -235,24 +289,26 @@ export class WebSocket extends EventTarget {
     }
   }
 
-  async #onFrame(frame: Frame) {
+  async #onFrame(frame: WebSocketFrame) {
     // console.log("<-", frame)
 
     if (!frame.final)
       return await this.#onNonfinalFrame(frame)
 
-    if (frame.opcode === Frame.opcodes.continuation)
+    if (frame.opcode === WebSocketFrame.opcodes.continuation)
       return await this.#onContinuationFrame(frame)
-    if (frame.opcode === Frame.opcodes.ping)
+    if (frame.opcode === WebSocketFrame.opcodes.ping)
       return await this.#onPingFrame(frame)
-    if (frame.opcode === Frame.opcodes.binary)
+    if (frame.opcode === WebSocketFrame.opcodes.binary)
       return await this.#onBinaryFrame(frame)
-    if (frame.opcode === Frame.opcodes.text)
+    if (frame.opcode === WebSocketFrame.opcodes.text)
       return await this.#onTextFrame(frame)
+    if (frame.opcode === WebSocketFrame.opcodes.close)
+      return await this.#onCloseFrame(frame)
   }
 
-  async #onNonfinalFrame(frame: Frame) {
-    if (frame.opcode !== Frame.opcodes.continuation) {
+  async #onNonfinalFrame(frame: WebSocketFrame) {
+    if (frame.opcode !== WebSocketFrame.opcodes.continuation) {
       if (this.#current.opcode !== undefined)
         throw new Error(`Already received a start frame`)
       this.#current.opcode = frame.opcode
@@ -261,27 +317,45 @@ export class WebSocket extends EventTarget {
     this.#current.buffer.write(frame.payload)
   }
 
-  async #onPingFrame(frame: Frame) {
-    const pong = new Frame(true, Frame.opcodes.pong, frame.payload, Bytes.random(4))
+  async #onPingFrame(frame: WebSocketFrame) {
+    const pong = new WebSocketFrame(true, WebSocketFrame.opcodes.pong, frame.payload, Bytes.random(4))
     this.#write(pong.prepare())
   }
 
-  async #onBinaryFrame(frame: Frame) {
+  async #onBinaryFrame(frame: WebSocketFrame) {
     this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
   }
 
-  async #onTextFrame(frame: Frame) {
+  async #onTextFrame(frame: WebSocketFrame) {
     this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
   }
 
-  async #onContinuationFrame(frame: Frame) {
+  async #onCloseFrame(frame: WebSocketFrame) {
+    if (this.readyState === this.OPEN) {
+      const echo = new WebSocketFrame(true, WebSocketFrame.opcodes.close, frame.payload, Bytes.random(4))
+      this.#write(echo.prepare())
+    }
+
+    this.#readyState = this.CLOSED
+
+    if (frame.payload) {
+      const close = Readable.fromBytes(WebSocketClose, frame.payload)
+      this.#reader.error(close.reason)
+      this.#writer.close()
+    } else {
+      this.#reader.error()
+      this.#writer.close()
+    }
+  }
+
+  async #onContinuationFrame(frame: WebSocketFrame) {
     this.#current.buffer.write(frame.payload)
 
     if (this.#current.opcode === undefined)
-      throw new Error(`Received continuation frame without start frame`)
+      throw new Error(`Received early continuation frame`)
 
     const payload = new Uint8Array(this.#current.buffer.bytes)
-    const full = new Frame(true, this.#current.opcode, payload)
+    const full = new WebSocketFrame(true, this.#current.opcode, payload)
     this.#current.opcode = undefined
     this.#current.buffer.offset = 0
     await this.#onFrame(full)

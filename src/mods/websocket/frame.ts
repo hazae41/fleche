@@ -2,8 +2,8 @@ import { Cursor } from "@hazae41/binary"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Length } from "mods/websocket/length.js"
 
-export class Frame {
-  readonly #class = Frame
+export class WebSocketFrame {
+  readonly #class = WebSocketFrame
 
   static readonly opcodes = {
     continuation: 0,
