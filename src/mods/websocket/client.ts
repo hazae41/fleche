@@ -26,8 +26,8 @@ export class WebSocketMessageState {
 
 }
 
-export class WebSocketClient extends EventTarget implements WebSocket {
-  readonly #class = WebSocketClient
+export class WebSocketClientDuplex extends EventTarget implements WebSocket {
+  readonly #class = WebSocketClientDuplex
 
   readonly reading = new AsyncEventTarget<CloseAndErrorEvents>()
   readonly writing = new AsyncEventTarget<CloseAndErrorEvents>()
