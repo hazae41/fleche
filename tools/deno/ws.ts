@@ -24,7 +24,7 @@ function onsocket(socket: WebSocket) {
 
   socket.addEventListener("message", e => {
     try {
-      console.log(e.data)
+      console.log(new Uint8Array(e.data))
       socket.send(e.data)
     } catch (_: unknown) {
       socket.close()

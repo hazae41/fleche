@@ -18,8 +18,8 @@ export type HttpClientStreamEvent = CloseAndErrorEvents & {
   head: MessageEvent<ResponseInit>
 }
 
-export class HttpClientStream {
-  readonly #class = HttpClientStream
+export class HttpClientDuplex {
+  readonly #class = HttpClientDuplex
 
   readonly reading = new AsyncEventTarget<HttpClientStreamEvent>()
   readonly writing = new AsyncEventTarget<CloseAndErrorEvents>()

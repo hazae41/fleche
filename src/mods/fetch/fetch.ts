@@ -1,7 +1,7 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Future } from "@hazae41/future"
 import { AbortEvent } from "libs/events/abort.js"
-import { HttpClientStream } from "mods/http/client.js"
+import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
   stream: ReadableWritablePair<Opaque, Writable>
@@ -31,7 +31,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   if (!headers.has("Accept-Encoding"))
     headers.set("Accept-Encoding", "gzip")
 
-  const http = new HttpClientStream(stream, { pathname, method, headers, signal })
+  const http = new HttpClientDuplex(stream, { pathname, method, headers, signal })
 
   const onHead = (event: Event) => {
     const msgEvent = event as MessageEvent<ResponseInit>

@@ -7,7 +7,7 @@ import { Iterables } from "libs/iterables/iterables.js";
 import { SuperReadableStream } from "libs/streams/readable.js";
 import { SuperWritableStream } from "libs/streams/writable.js";
 import { Strings } from "libs/strings/strings.js";
-import { HttpClientStream } from "mods/http/client.js";
+import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
 import { WebSocketFrame } from "./frame.js";
 
@@ -76,7 +76,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
     headers.set("Sec-WebSocket-Key", this.#key)
     headers.set("Sec-WebSocket-Version", "13")
 
-    const http = new HttpClientStream(stream, { pathname, method: "GET", headers })
+    const http = new HttpClientDuplex(stream, { pathname, method: "GET", headers })
 
     this.#reader = new SuperWritableStream({
       start: this.#onReadStart.bind(this),

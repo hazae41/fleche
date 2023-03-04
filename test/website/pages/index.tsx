@@ -1,6 +1,6 @@
 import { Fleche } from "@hazae41/fleche"
+import { createWebSocketStream } from "libs/transports/websocket"
 import { useCallback } from "react"
-import { createWebSocketStream } from "../src/transports/websocket"
 
 export default function Home() {
 
@@ -9,9 +9,10 @@ export default function Home() {
       const tcp = await createWebSocketStream("ws://localhost:8080")
       const ws = new Fleche.WebSocket("ws://localhost", undefined, { stream: tcp })
 
+      ws.binaryType = "arraybuffer"
+
       await new Promise((ok, err) => {
         ws.addEventListener("open", ok)
-        ws.addEventListener("close", err)
         ws.addEventListener("error", err)
       })
 
