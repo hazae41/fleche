@@ -14,7 +14,7 @@ import { WebSocketFrame } from "./frame.js";
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
 
 export interface WebSocketParams {
-  readonly stream: ReadableWritablePair<Opaque, Writable>
+  readonly subduplex: ReadableWritablePair<Opaque, Writable>
   readonly signal?: AbortSignal
 }
 
@@ -62,7 +62,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     super()
 
     const { host, pathname, href } = new URL(url)
-    const { stream, signal } = params
+    const { subduplex: stream, signal } = params
 
     this.url = href
 

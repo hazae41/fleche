@@ -34,10 +34,10 @@ export class HttpClientDuplex {
 
   /**
    * Create a new HTTP 1.1 stream
-   * @param stream substream
+   * @param subduplex
    */
   constructor(
-    readonly stream: ReadableWritablePair<Opaque, Writable>,
+    readonly subduplex: ReadableWritablePair<Opaque, Writable>,
     readonly params: HttpStreamParams
   ) {
     const { signal } = params
@@ -59,13 +59,13 @@ export class HttpClientDuplex {
     this.readable = piper.readable
     this.writable = write.writable
 
-    stream.readable
+    subduplex.readable
       .pipeTo(read.writable, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
 
     write.readable
-      .pipeTo(stream.writable, { signal })
+      .pipeTo(subduplex.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
 
