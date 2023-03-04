@@ -1,8 +1,7 @@
 import { Cursor, Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
-import { CloseEvent } from "libs/events/close.js"
-import { ErrorEvent } from "libs/events/error.js"
+import { CloseAndErrorEvents } from "libs/events/events.js"
 import { AsyncEventTarget } from "libs/events/target.js"
 import { SuperTransformStream } from "libs/streams/transform.js"
 import { Strings } from "libs/strings/strings.js"
@@ -15,11 +14,15 @@ export interface HttpStreamParams {
   readonly signal?: AbortSignal
 }
 
-export class HttpClientStream extends AsyncEventTarget {
+export type HttpClientStreamEvent = CloseAndErrorEvents & {
+  head: MessageEvent<ResponseInit>
+}
+
+export class HttpClientStream {
   readonly #class = HttpClientStream
 
-  readonly reading = new AsyncEventTarget()
-  readonly writing = new AsyncEventTarget()
+  readonly reading = new AsyncEventTarget<HttpClientStreamEvent>()
+  readonly writing = new AsyncEventTarget<CloseAndErrorEvents>()
 
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
@@ -37,8 +40,6 @@ export class HttpClientStream extends AsyncEventTarget {
     readonly stream: ReadableWritablePair<Opaque, Writable>,
     readonly params: HttpStreamParams
   ) {
-    super()
-
     const { signal } = params
 
     this.#reader = new SuperTransformStream({
@@ -80,7 +81,7 @@ export class HttpClientStream extends AsyncEventTarget {
     this.#reader.closed = {}
 
     const closeEvent = new CloseEvent("close", {})
-    if (!await this.reading.dispatchEvent(closeEvent)) return
+    await this.reading.dispatchEvent(closeEvent, "close")
   }
 
   async #onReadError(reason?: unknown) {
@@ -91,7 +92,7 @@ export class HttpClientStream extends AsyncEventTarget {
 
     const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
-    if (!await this.reading.dispatchEvent(errorEvent)) return
+    await this.reading.dispatchEvent(errorEvent, "error")
   }
 
   async #onWriteClose() {
@@ -100,7 +101,7 @@ export class HttpClientStream extends AsyncEventTarget {
     this.#writer.closed = {}
 
     const closeEvent = new CloseEvent("close", {})
-    if (!await this.writing.dispatchEvent(closeEvent)) return
+    await this.writing.dispatchEvent(closeEvent, "close")
   }
 
   async #onWriteError(reason?: unknown) {
@@ -111,7 +112,7 @@ export class HttpClientStream extends AsyncEventTarget {
 
     const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
-    if (!await this.writing.dispatchEvent(errorEvent)) return
+    await this.writing.dispatchEvent(errorEvent, "error")
   }
 
   async #onRead(chunk: Opaque) {
@@ -220,7 +221,7 @@ export class HttpClientStream extends AsyncEventTarget {
     }
 
     const msgEvent = new MessageEvent("head", { data: { headers, status, statusText } })
-    await this.reading.dispatchEvent(msgEvent)
+    await this.reading.dispatchEvent(msgEvent, "head")
 
     return rawBody
   }

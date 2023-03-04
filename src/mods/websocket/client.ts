@@ -1,8 +1,7 @@
 import { Cursor, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
-import { CloseEvent } from "libs/events/close.js";
-import { ErrorEvent } from "libs/events/error.js";
+import { CloseAndErrorEvents } from "libs/events/events.js";
 import { AsyncEventTarget } from "libs/events/target.js";
 import { Iterables } from "libs/iterables/iterables.js";
 import { SuperReadableStream } from "libs/streams/readable.js";
@@ -30,8 +29,8 @@ export class WebSocketMessageState {
 export class WebSocketClient extends EventTarget implements WebSocket {
   readonly #class = WebSocketClient
 
-  readonly reading = new AsyncEventTarget()
-  readonly writing = new AsyncEventTarget()
+  readonly reading = new AsyncEventTarget<CloseAndErrorEvents>()
+  readonly writing = new AsyncEventTarget<CloseAndErrorEvents>()
 
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
@@ -216,7 +215,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
     this.#reader.closed = {}
 
     const closeEvent = new CloseEvent("close", {})
-    if (!await this.reading.dispatchEvent(closeEvent)) return
+    await this.reading.dispatchEvent(closeEvent, "close")
   }
 
   async #onWriteClose() {
@@ -225,7 +224,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
     this.#writer.closed = {}
 
     const closeEvent = new CloseEvent("close", {})
-    if (!await this.writing.dispatchEvent(closeEvent)) return
+    await this.writing.dispatchEvent(closeEvent, "close")
   }
 
   async #onReadError(reason?: unknown) {
@@ -236,7 +235,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
 
     const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
-    if (!await this.reading.dispatchEvent(errorEvent)) return
+    await this.reading.dispatchEvent(errorEvent, "error")
 
     await this.#onError(reason)
   }
@@ -249,7 +248,7 @@ export class WebSocketClient extends EventTarget implements WebSocket {
 
     const error = new Error(`Errored`, { cause: reason })
     const errorEvent = new ErrorEvent("error", { error })
-    if (!await this.writing.dispatchEvent(errorEvent)) return
+    await this.writing.dispatchEvent(errorEvent, "error")
 
     await this.#onError(reason)
   }

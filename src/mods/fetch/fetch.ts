@@ -1,6 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
+import { Future } from "@hazae41/future"
 import { AbortEvent } from "libs/events/abort.js"
-import { Future } from "libs/futures/future.js"
 import { HttpClientStream } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -15,10 +15,10 @@ export interface FetchParams {
  * @returns 
  */
 export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams) {
-  const { stream, ...init2 } = init
+  const { stream, ...initRest } = init
 
-  const request = new Request(input, init2)
-  const future = new Future<Response, Error>()
+  const request = new Request(input, initRest)
+  const future = new Future<Response>()
 
   const { url, method, signal } = request
   const { host, pathname } = new URL(url)
@@ -36,25 +36,25 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   const onHead = (event: Event) => {
     const msgEvent = event as MessageEvent<ResponseInit>
     const response = new Response(http.readable, msgEvent.data)
-    future.ok(response)
+    future.resolve(response)
   }
 
   const onAbort = (event: Event) => {
     const abortEvent = event as AbortEvent
     const error = new Error(`Aborted`, { cause: abortEvent.target.reason })
-    future.err(error)
+    future.reject(error)
   }
 
   const onClose = (event: Event) => {
     const closeEvent = event as CloseEvent
     const error = new Error(`Closed`, { cause: closeEvent })
-    future.err(error)
+    future.reject(error)
   }
 
   const onError = (event: Event) => {
     const errorEvent = event as ErrorEvent
     const error = new Error(`Errored`, { cause: errorEvent })
-    future.err(error)
+    future.reject(error)
   }
 
   try {
@@ -78,9 +78,9 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     }
 
     if (body)
-      body.pipeTo(http.writable, { signal }).catch(future.err)
+      body.pipeTo(http.writable, { signal }).catch(future.reject)
     else
-      http.writable.close().catch(future.err)
+      http.writable.close().catch(future.reject)
 
     return await future.promise
   } finally {
