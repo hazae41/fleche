@@ -40,7 +40,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
   readonly #key = Bytes.toBase64(Bytes.random(16))
 
-  #readyState = WebSocket.CONNECTING
+  #readyState: number = WebSocket.CONNECTING
 
   binaryType: BinaryType = "blob"
 
