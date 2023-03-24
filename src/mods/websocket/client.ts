@@ -1,11 +1,10 @@
 import { Cursor, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
+import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { CloseAndErrorEvents } from "libs/events/events.js";
 import { AsyncEventTarget } from "libs/events/target.js";
 import { Iterables } from "libs/iterables/iterables.js";
-import { SuperReadableStream } from "libs/streams/readable.js";
-import { SuperWritableStream } from "libs/streams/writable.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
