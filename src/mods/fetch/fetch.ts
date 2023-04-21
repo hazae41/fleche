@@ -1,6 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Future } from "@hazae41/future"
-import { AbortEvent } from "libs/events/abort.js"
+import { AbortEvent } from "@hazae41/plume"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
