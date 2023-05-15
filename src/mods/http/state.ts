@@ -1,4 +1,4 @@
-import { Cursor } from "@hazae41/binary"
+import { Cursor } from "@hazae41/cursor"
 import { GzDecoder, GzEncoder } from "@hazae41/foras"
 
 export type HttpState =

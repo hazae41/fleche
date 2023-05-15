@@ -1,8 +1,10 @@
-import { Cursor, Opaque, Writable } from "@hazae41/binary"
+import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
 import { SuperTransformStream } from "@hazae41/cascade"
+import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
-import { AsyncEventTarget, CloseAndErrorEvents } from "@hazae41/plume"
+import { StreamEvents, SuperEventTarget } from "@hazae41/plume"
+import { Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
@@ -13,15 +15,15 @@ export interface HttpStreamParams {
   readonly signal?: AbortSignal
 }
 
-export type HttpClientStreamEvent = CloseAndErrorEvents & {
-  head: MessageEvent<ResponseInit>
+export type HttpClientStreamEvent = StreamEvents & {
+  head: ResponseInit
 }
 
 export class HttpClientDuplex {
   readonly #class = HttpClientDuplex
 
-  readonly reading = new AsyncEventTarget<HttpClientStreamEvent>()
-  readonly writing = new AsyncEventTarget<CloseAndErrorEvents>()
+  readonly reading = new SuperEventTarget<HttpClientStreamEvent>()
+  readonly writing = new SuperEventTarget<StreamEvents>()
 
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
@@ -79,8 +81,7 @@ export class HttpClientDuplex {
 
     this.#reader.closed = {}
 
-    const closeEvent = new CloseEvent("close", {})
-    await this.reading.dispatchEvent(closeEvent, "close")
+    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
   }
 
   async #onReadError(reason?: unknown) {
@@ -89,9 +90,7 @@ export class HttpClientDuplex {
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    const error = new Error(`Errored`, { cause: reason })
-    const errorEvent = new ErrorEvent("error", { error })
-    await this.reading.dispatchEvent(errorEvent, "error")
+    await this.reading.tryEmit("error", reason).then(r => r.unwrap())
   }
 
   async #onWriteClose() {
@@ -99,8 +98,7 @@ export class HttpClientDuplex {
 
     this.#writer.closed = {}
 
-    const closeEvent = new CloseEvent("close", {})
-    await this.writing.dispatchEvent(closeEvent, "close")
+    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
   }
 
   async #onWriteError(reason?: unknown) {
@@ -109,9 +107,7 @@ export class HttpClientDuplex {
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    const error = new Error(`Errored`, { cause: reason })
-    const errorEvent = new ErrorEvent("error", { error })
-    await this.writing.dispatchEvent(errorEvent, "error")
+    await this.reading.tryEmit("error", reason).then(r => r.unwrap())
   }
 
   async #onRead(chunk: Opaque) {
@@ -122,13 +118,19 @@ export class HttpClientDuplex {
     if (this.#state.type === "heading" || this.#state.type === "upgrading") {
       const result = await this.#onReadHead(bytes, this.#state)
 
-      if (!result?.length)
-        return
-      bytes = result
+      if (result.isErr())
+        return result
+
+      if (!result.inner?.length)
+        return Ok.void()
+
+      bytes = result.inner
     }
 
-    if (this.#state.type === "upgraded")
-      return this.#reader.enqueue(bytes)
+    if (this.#state.type === "upgraded") {
+      this.#reader.enqueue(bytes)
+      return Ok.void()
+    }
 
     if (this.#state.type === "headed") {
       if (this.#state.server_transfer.type === "none")
@@ -196,11 +198,14 @@ export class HttpClientDuplex {
   async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState) {
     const { buffer } = state
 
-    buffer.write(chunk)
+    const write = buffer.tryWrite(chunk)
+
+    if (write.isErr())
+      return write
 
     const split = buffer.buffer.indexOf("\r\n\r\n")
 
-    if (split === -1) return
+    if (split === -1) return Ok.void()
 
     const rawHead = buffer.buffer.subarray(0, split)
     const rawBody = buffer.buffer.subarray(split + "\r\n\r\n".length, buffer.offset)
@@ -219,13 +224,15 @@ export class HttpClientDuplex {
       this.#state = { ...state, type: "headed", server_transfer, server_compression }
     }
 
-    const msgEvent = new MessageEvent("head", { data: { headers, status, statusText } })
-    await this.reading.dispatchEvent(msgEvent, "head")
+    const headEvent = await this.reading.tryEmit("head", { headers, status, statusText })
 
-    return rawBody
+    if (headEvent.isErr())
+      return headEvent
+
+    return new Ok(rawBody)
   }
 
-  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState) {
+  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, never>> {
     if (state.server_transfer.type !== "none")
       throw new Error("Invalid state")
 
@@ -240,9 +247,11 @@ export class HttpClientDuplex {
     } else {
       this.#reader.enqueue(chunk)
     }
+
+    return Ok.void()
   }
 
-  async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState) {
+  async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, never>> {
     if (state.server_transfer.type !== "lengthed")
       throw new Error("Invalid state")
 
@@ -272,16 +281,21 @@ export class HttpClientDuplex {
 
       this.#reader.terminate()
     }
+
+    return Ok.void()
   }
 
-  async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState) {
+  async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, CursorWriteLengthOverflowError>> {
     if (state.server_transfer.type !== "chunked")
       throw new Error("Invalid state")
 
     const { server_transfer, server_compression } = state
     const { buffer } = server_transfer
 
-    buffer.write(chunk)
+    const write = buffer.tryWrite(chunk)
+
+    if (write.isErr())
+      return write
 
     let slice = buffer.buffer.subarray(0, buffer.offset)
 
@@ -289,7 +303,7 @@ export class HttpClientDuplex {
       const index = slice.indexOf("\r\n")
 
       // [...] => partial header => wait
-      if (index === -1) return
+      if (index === -1) return Ok.void()
 
       // [length]\r\n(...) => full header => split it
       const length = parseInt(slice.subarray(0, index).toString(), 16)
@@ -303,7 +317,7 @@ export class HttpClientDuplex {
         }
 
         this.#reader.terminate()
-        return
+        return Ok.void()
       }
 
       // len(...) < length + len(\r\n) => partial chunk => wait
@@ -324,13 +338,19 @@ export class HttpClientDuplex {
       }
 
       buffer.offset = 0
-      buffer.write(rest2)
+
+      const write = buffer.tryWrite(rest2)
+
+      if (write.isErr())
+        return write
 
       slice = buffer.buffer.subarray(0, buffer.offset)
     }
+
+    return Ok.void()
   }
 
-  async #onWriteStart() {
+  async #onWriteStart(): Promise<Result<void, never>> {
     const { method, pathname, headers } = this.params
 
     let head = `${method} ${pathname} HTTP/1.1\r\n`
@@ -349,13 +369,17 @@ export class HttpClientDuplex {
       const client_compression = await this.#getClientCompressionFromHeaders(headers)
       this.#state = { type: "heading", buffer, client_transfer, client_compression }
     }
+
+    return Ok.void()
   }
 
-  async #onWrite(chunk: Uint8Array) {
+  async #onWrite(chunk: Uint8Array): Promise<Result<void, never>> {
     // console.debug(this.#class.name, "->", chunk)
 
-    if (this.#state.type === "upgrading" || this.#state.type === "upgraded")
-      return this.#writer.enqueue(new Opaque(chunk))
+    if (this.#state.type === "upgrading" || this.#state.type === "upgraded") {
+      this.#writer.enqueue(new Opaque(chunk))
+      return Ok.void()
+    }
 
     if (this.#state.type === "heading" || this.#state.type === "headed") {
       if (this.#state.client_transfer.type === "none")
@@ -367,26 +391,38 @@ export class HttpClientDuplex {
     throw new Error(`Invalid state`)
   }
 
-  async #onWriteNone(chunk: Uint8Array) {
+  async #onWriteNone(chunk: Uint8Array): Promise<Result<void, never>> {
     this.#writer.enqueue(new Opaque(chunk))
+
+    return Ok.void()
   }
 
-  async #onWriteChunked(chunk: Uint8Array) {
+  async #onWriteChunked(chunk: Uint8Array): Promise<Result<void, never>> {
     const text = new TextDecoder().decode(chunk)
     const length = text.length.toString(16)
     const line = `${length}\r\n${text}\r\n`
 
     // console.debug(this.#class.name, "->", line.length, line)
     this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
+
+    return Ok.void()
   }
 
-  async #onWriteFlush() {
-    if (this.#state.type !== "heading")
-      return
+  async #onWriteFlush(): Promise<Result<void, never>> {
+    if (this.#state.type === "heading") {
 
-    if (this.#state.client_transfer.type === "none")
-      return this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`\r\n`)))
-    if (this.#state.client_transfer.type === "chunked")
-      return this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`0\r\n\r\n`)))
+      if (this.#state.client_transfer.type === "none") {
+        this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`\r\n`)))
+        return Ok.void()
+      }
+
+      if (this.#state.client_transfer.type === "chunked") {
+        this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`0\r\n\r\n`)))
+        return Ok.void()
+      }
+
+    }
+
+    return Ok.void()
   }
 }

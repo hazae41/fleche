@@ -1,57 +1,45 @@
-import { Cursor } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
+import { Cursor, CursorReadLengthOverflowError, CursorReadUnknownError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor"
+import { Option } from "@hazae41/option"
+import { Ok, Result } from "@hazae41/result"
 
 export class WebSocketClose {
   readonly #class = WebSocketClose
 
   constructor(
     readonly code: number,
-    readonly reason?: string
+    readonly reason: Option<Bytes>
   ) { }
 
-  #data?: {
-    reason?: Uint8Array
+  static tryNew(code: number, reason?: string): Result<WebSocketClose, never> {
+    return new Ok(new WebSocketClose(code, Option.from(reason).mapSync(Bytes.fromUtf8)))
   }
 
-  prepare() {
-    const reason = this.reason
-      ? Bytes.fromUtf8(this.reason)
-      : undefined
-
-    this.#data = { reason }
-    return this
+  trySize(): Result<number, never> {
+    return new Ok(2 + this.reason.mapOrSync(0, x => x.length))
   }
 
-  size() {
-    if (!this.#data)
-      throw new Error(`Unprepared ${this.#class.name}`)
-    const { reason } = this.#data
+  tryWrite(cursor: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+    return Result.unthrowSync(t => {
+      cursor.tryWriteUint16(this.code).throw(t)
+      this.reason.inspectSync(x => cursor.tryWrite(x).throw(t))
 
-    return 2 + (reason?.length ?? 0)
+      return Ok.void()
+    })
   }
 
-  write(cursor: Cursor) {
-    if (!this.#data)
-      throw new Error(`Unprepared ${this.#class.name}`)
-    const { reason } = this.#data
+  static tryRead(cursor: Cursor): Result<WebSocketClose, CursorReadUnknownError | CursorReadLengthOverflowError> {
+    return Result.unthrowSync(t => {
+      const code = cursor.tryReadUint16().throw(t)
 
-    cursor.writeUint16(this.code)
+      if (cursor.remaining) {
+        const bytes = cursor.tryRead(cursor.remaining).throw(t)
+        const reason = Bytes.toUtf8(bytes)
+        return WebSocketClose.tryNew(code, reason)
+      }
 
-    if (reason) {
-      cursor.write(reason)
-    }
-  }
-
-  static read(cursor: Cursor) {
-    const code = cursor.readUint16()
-
-    if (cursor.remaining) {
-      const bytes = cursor.read(cursor.remaining)
-      const reason = Bytes.toUtf8(bytes)
-      return new this(code, reason)
-    }
-
-    return new this(code)
+      return WebSocketClose.tryNew(code)
+    })
   }
 
 }

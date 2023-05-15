@@ -1,6 +1,7 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Future } from "@hazae41/future"
-import { AbortEvent } from "@hazae41/plume"
+import { AbortEvent, CloseError, ErrorError } from "@hazae41/plume"
+import { Ok } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -33,10 +34,10 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
 
   const http = new HttpClientDuplex(stream, { pathname, method, headers, signal })
 
-  const onHead = (event: Event) => {
-    const msgEvent = event as MessageEvent<ResponseInit>
-    const response = new Response(http.readable, msgEvent.data)
+  const onHead = (init: ResponseInit) => {
+    const response = new Response(http.readable, init)
     future.resolve(response)
+    return Ok.void()
   }
 
   const onAbort = (event: Event) => {
@@ -45,23 +46,23 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     future.reject(error)
   }
 
-  const onClose = (event: Event) => {
-    const closeEvent = event as CloseEvent
-    const error = new Error(`Closed`, { cause: closeEvent })
+  const onClose = () => {
+    const error = new CloseError(`Closed`)
     future.reject(error)
+    return Ok.void()
   }
 
-  const onError = (event: Event) => {
-    const errorEvent = event as ErrorEvent
-    const error = new Error(`Errored`, { cause: errorEvent })
+  const onError = (cause?: unknown) => {
+    const error = new ErrorError(`Errored`, { cause })
     future.reject(error)
+    return Ok.void()
   }
 
   try {
     signal.addEventListener("abort", onAbort, { passive: true })
-    http.reading.addEventListener("close", onClose, { passive: true })
-    http.reading.addEventListener("error", onError, { passive: true })
-    http.reading.addEventListener("head", onHead, { passive: true })
+    http.reading.on("close", onClose, { passive: true })
+    http.reading.on("error", onError, { passive: true })
+    http.reading.on("head", onHead, { passive: true })
 
     let body = request.body
 
@@ -85,8 +86,8 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     return await future.promise
   } finally {
     signal.removeEventListener("abort", onAbort)
-    http.reading.removeEventListener("close", onClose)
-    http.reading.removeEventListener("error", onError)
-    http.reading.removeEventListener("head", onHead)
+    http.reading.off("close", onClose)
+    http.reading.off("error", onError)
+    http.reading.off("head", onHead)
   }
 }

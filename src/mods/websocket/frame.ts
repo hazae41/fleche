@@ -1,5 +1,9 @@
-import { Cursor } from "@hazae41/binary"
+import { BinaryReadUnderflowError } from "@hazae41/binary"
+import { Bytes } from "@hazae41/bytes"
+import { Cursor, CursorReadLengthOverflowError, CursorReadUnknownError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
+import { Option } from "@hazae41/option"
+import { Err, Ok, Result } from "@hazae41/result"
 import { Length } from "mods/websocket/length.js"
 
 export class WebSocketFrame {
@@ -18,73 +22,75 @@ export class WebSocketFrame {
     pong: 10
   } as const
 
-  constructor(
+  private constructor(
     readonly final: boolean,
     readonly opcode: number,
     readonly payload: Uint8Array,
-    readonly mask?: Uint8Array,
+    readonly payloadLength: Length,
+    readonly mask: Option<Bytes<4>>,
   ) { }
 
-  #data?: {
-    length: Length
-  }
+  static tryNew(params: {
+    final: boolean,
+    opcode: number,
+    payload: Bytes,
+    mask?: Bytes<4>
+  }): Result<WebSocketFrame, never> {
+    const { final, opcode, payload } = params
 
-  prepare() {
-    const length = new Length(this.payload.length)
-    this.#data = { length }
-    return this
+    const length = new Length(payload.length)
+    const mask = Option.from(params.mask)
+
+    return new Ok(new WebSocketFrame(final, opcode, payload, length, mask))
   }
 
   /**
    * Size as bits
    * @returns bits
    */
-  size() {
-    if (!this.#data)
-      throw new Error(`Unprepared ${this.#class.name}`)
-    const { length } = this.#data
-
-    return 0
+  trySize(): Result<number, never> {
+    return new Ok(0
       + 1 // FIN
       + 3 // RSV
       + 4 // opcode
       + 1 // MASK
-      + length.size()
-      + (this.mask?.length ?? 0) * 8
-      + this.payload.length * 8
+      + this.payloadLength.trySize().inner
+      + this.mask.mapOrSync(0, x => x.length * 8)
+      + this.payload.length * 8)
   }
 
   /**
    * Write as bits
    * @param cursor bits
    */
-  write(cursor: Cursor) {
-    if (!this.#data)
-      throw new Error(`Unprepared ${this.#class.name}`)
-    const { length } = this.#data
+  tryWrite(cursor: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+    return Result.unthrowSync(t => {
+      cursor.tryWriteUint8(Number(this.final)).throw(t)
 
-    cursor.writeUint8(Number(this.final))
+      cursor.tryWriteUint8(0).throw(t)
+      cursor.tryWriteUint8(0).throw(t)
+      cursor.tryWriteUint8(0).throw(t)
 
-    cursor.writeUint8(0)
-    cursor.writeUint8(0)
-    cursor.writeUint8(0)
+      const opcodeBytes = Cursor.allocUnsafe(1)
+      opcodeBytes.tryWriteUint8(this.opcode).throw(t)
 
-    const opcodeBytes = Cursor.allocUnsafe(1)
-    opcodeBytes.writeUint8(this.opcode)
-    const opcodeBits = unpack(opcodeBytes.bytes)
-    cursor.write(opcodeBits.subarray(4)) // 8 - 4
+      const opcodeBits = unpack(opcodeBytes.bytes)
+      cursor.tryWrite(opcodeBits.subarray(4)).throw(t) // 8 - 4
 
-    const masked = Boolean(this.mask)
-    cursor.writeUint8(Number(masked))
+      const masked = Boolean(this.mask)
+      cursor.tryWriteUint8(Number(masked)).throw(t)
 
-    length.write(cursor)
+      this.payloadLength.tryWrite(cursor).throw(t)
 
-    if (this.mask) {
-      cursor.write(unpack(this.mask))
-      xor_mod(this.payload, this.mask)
-    }
+      if (this.mask.isSome()) {
+        cursor.tryWrite(unpack(this.mask.inner)).throw(t)
+        xor_mod(this.payload, this.mask.inner)
+      }
 
-    cursor.write(unpack(this.payload))
+      cursor.tryWrite(unpack(this.payload)).throw(t)
+
+      return Ok.void()
+    })
   }
 
   /**
@@ -92,31 +98,35 @@ export class WebSocketFrame {
    * @param cursor bits
    * @returns 
    */
-  static read(cursor: Cursor) {
-    const final = Boolean(cursor.readUint8())
+  static tryRead(cursor: Cursor): Result<WebSocketFrame, CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError | Bytes.CastError<4>> {
+    return Result.unthrowSync(t => {
+      const final = Boolean(cursor.tryReadUint8().throw(t))
 
-    cursor.offset += 3
+      cursor.offset += 3
 
-    const opcode = cursor.read(4).reduce((p, n) => (p << 1) | n)
+      const opcode = cursor.tryRead(4).throw(t).reduce((p, n) => (p << 1) | n)
 
-    const masked = Boolean(cursor.readUint8())
+      const masked = Boolean(cursor.tryReadUint8().throw(t))
 
-    const length = Length.read(cursor)
+      const length = Length.tryRead(cursor).throw(t)
 
-    if (cursor.remaining < length.value)
-      throw new Error(`Not enough remaining bytes`)
+      if (cursor.remaining < length.value)
+        return new Err(new BinaryReadUnderflowError(cursor))
 
-    if (masked) {
-      const mask = pack_left(cursor.read(4 * 8))
-      const payload = pack_left(cursor.read(length.value * 8))
-      xor_mod(payload, mask)
+      if (masked) {
+        const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t))
+        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t))
+        xor_mod(payload, rawMask)
 
-      return new this(final, opcode, payload, mask)
-    } else {
-      const payload = pack_left(cursor.read(length.value * 8))
+        const mask = Bytes.tryCast(rawMask, 4).throw(t)
 
-      return new this(final, opcode, payload)
-    }
+        return WebSocketFrame.tryNew({ final, opcode, payload, mask })
+      } else {
+        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t))
+
+        return WebSocketFrame.tryNew({ final, opcode, payload })
+      }
+    })
   }
 
 }

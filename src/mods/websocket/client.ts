@@ -1,9 +1,11 @@
-import { Cursor, Opaque, Readable, Writable } from "@hazae41/binary";
+import { BinaryReadUnderflowError, BinaryWriteUnderflowError, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
 import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { Cursor, CursorReadLengthOverflowError, CursorReadUnknownError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
-import { AsyncEventTarget, CloseAndErrorEvents } from "@hazae41/plume";
-import { Iterables } from "libs/iterables/iterables.js";
+import { StreamEvents, SuperEventTarget } from "@hazae41/plume";
+import { Err, Ok, Result } from "@hazae41/result";
+import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
@@ -24,11 +26,29 @@ export class WebSocketMessageState {
 
 }
 
+export class WebSocketContinuationFrameError extends Error {
+  readonly #class = WebSocketContinuationFrameError
+
+  constructor() {
+    super(`Did not expect a continuation frame`)
+  }
+
+}
+
+export class WebSocketNotContinuationFrameError extends Error {
+  readonly #class = WebSocketNotContinuationFrameError
+
+  constructor() {
+    super(`Expected a continuation frame`)
+  }
+
+}
+
 export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #class = WebSocketClientDuplex
 
-  readonly reading = new AsyncEventTarget<CloseAndErrorEvents>()
-  readonly writing = new AsyncEventTarget<CloseAndErrorEvents>()
+  readonly reading = new SuperEventTarget<StreamEvents>()
+  readonly writing = new SuperEventTarget<StreamEvents>()
 
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
@@ -96,7 +116,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
 
-    http.reading.addEventListener("head", this.#onHead.bind(this), { passive: true })
+    http.reading.on("head", this.#onHead.bind(this), { passive: true })
 
     this.addEventListener("close", (e) => this.onclose?.(e))
     this.addEventListener("error", (e) => this.onerror?.(e))
@@ -138,52 +158,87 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return 0
   }
 
-  #write(frame: WebSocketFrame) {
-    const bits = Writable.toBytes(frame)
-    const bytes = pack_right(bits)
+  #tryWrite(frame: WebSocketFrame): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError | BinaryWriteUnderflowError> {
+    const bits = Writable.tryWriteToBytes(frame)
+
+    if (bits.isErr())
+      return bits
+
+    const bytes = pack_right(bits.inner)
     this.#writer.enqueue(bytes)
+
+    return Ok.void()
   }
 
-  #split(opcode: number, data: Uint8Array) {
-    const chunks = new Cursor(data).split(32768)
-    const peeker = Iterables.peek(chunks)
+  #trySplit(opcode: number, data: Uint8Array): Result<void, CursorReadLengthOverflowError | CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError> {
+    const chunks = new Cursor(data).trySplit(32_768)
+    const peeker = Iterators.peek(chunks)
 
     const first = peeker.next()
-    if (first.done) return
+
+    if (first.done)
+      return Ok.void()
 
     const { current, next } = first.value
-    // console.debug(this.#class.name, "->", current.length)
-    const frame = new WebSocketFrame(Boolean(next.done), opcode, current, Bytes.random(4))
-    this.#write(frame.prepare())
+    const final = Boolean(next.done)
+    const mask = Bytes.random(4)
 
-    for (const { current, next } of peeker) {
+    const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+
+    // console.debug(this.#class.name, "->", current.length)
+    const write = this.#tryWrite(frame.inner)
+
+    if (write.isErr())
+      return write
+
+    let result = peeker.next()
+
+    while (!result.done) {
+      const { current, next } = result.value
+
+      const final = Boolean(next.done)
+      const opcode = WebSocketFrame.opcodes.continuation
+      const mask = Bytes.random(4)
+
+      const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+
       // console.debug(this.#class.name, "-> (continuation)", current.length)
-      const frame = new WebSocketFrame(Boolean(next.done), WebSocketFrame.opcodes.continuation, current, Bytes.random(4))
-      this.#write(frame.prepare())
+      const write = this.#tryWrite(frame.inner)
+
+      if (write.isErr())
+        return write
+
+      result = peeker.next()
     }
+
+    return result.value
   }
 
   async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
     if (typeof data === "string")
-      return this.#split(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
+      return this.#trySplit(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data)).unwrap()
     else if (data instanceof Blob)
-      return this.#split(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer()))
+      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer())).unwrap()
     else if ("buffer" in data)
-      return this.#split(WebSocketFrame.opcodes.binary, Bytes.fromView(data))
+      return this.#trySplit(WebSocketFrame.opcodes.binary, Bytes.fromView(data)).unwrap()
     else
-      return this.#split(WebSocketFrame.opcodes.text, new Uint8Array(data))
+      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(data)).unwrap()
   }
 
   close(code = 1000, reason?: string): void {
-    const payload = Writable.toBytes(new WebSocketClose(code, reason).prepare())
-    const frame = new WebSocketFrame(true, WebSocketFrame.opcodes.close, payload, Bytes.random(4))
-    this.#write(frame.prepare())
+    const final = true
+    const opcode = WebSocketFrame.opcodes.close
+    const close = WebSocketClose.tryNew(code, reason)
+    const payload = Writable.tryWriteToBytes(close.inner).unwrap()
+    const mask = Bytes.random(4)
+
+    const frame = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+    this.#tryWrite(frame.inner).unwrap()
     this.#readyState = this.CLOSING
   }
 
-  async #onHead(event: Event) {
-    const msgEvent = event as MessageEvent<ResponseInit>
-    const { headers, status } = msgEvent.data
+  async #onHead(response: ResponseInit) {
+    const { headers, status } = response
 
     if (status !== 101)
       throw new Error(`Invalid HTTP status code ${status}`)
@@ -205,6 +260,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const openEvent = new Event("open")
     this.dispatchEvent(openEvent)
+
+    return Ok.void()
   }
 
   async #onReadClose() {
@@ -212,8 +269,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#reader.closed = {}
 
-    const closeEvent = new CloseEvent("close", {})
-    await this.reading.dispatchEvent(closeEvent, "close")
+    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
   }
 
   async #onWriteClose() {
@@ -221,8 +277,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#writer.closed = {}
 
-    const closeEvent = new CloseEvent("close", {})
-    await this.writing.dispatchEvent(closeEvent, "close")
+    await this.writing.tryEmit("close", undefined).then(r => r.unwrap())
   }
 
   async #onReadError(reason?: unknown) {
@@ -231,9 +286,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    const error = new Error(`Errored`, { cause: reason })
-    const errorEvent = new ErrorEvent("error", { error })
-    await this.reading.dispatchEvent(errorEvent, "error")
+    await this.reading.tryEmit("error", reason).then(r => r.unwrap())
 
     await this.#onError(reason)
   }
@@ -244,15 +297,12 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    const error = new Error(`Errored`, { cause: reason })
-    const errorEvent = new ErrorEvent("error", { error })
-    await this.writing.dispatchEvent(errorEvent, "error")
+    await this.writing.tryEmit("error", reason).then(r => r.unwrap())
 
     await this.#onError(reason)
   }
 
-  async #onError(reason?: unknown) {
-    const error = new Error(`Errored`, { cause: reason })
+  async #onError(error?: unknown) {
     const errorEvent = new ErrorEvent("error", { error })
     this.dispatchEvent(errorEvent)
 
@@ -260,42 +310,59 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.dispatchEvent(closeEvent)
   }
 
-  async #onReadStart() {
+  async #onReadStart(): Promise<Result<void, never>> {
     await Naberius.initBundledOnce()
+
+    return Ok.void()
   }
 
-  async #onRead(chunk: Uint8Array) {
+  async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketContinuationFrameError | WebSocketNotContinuationFrameError | CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError | CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError>> {
     // console.debug(this.#class.name, "<-", chunk.length)
 
     const bits = unpack(chunk)
 
     if (this.#frame.offset)
-      await this.#onReadBuffered(bits)
+      return await this.#onReadBuffered(bits)
     else
-      await this.#onReadDirect(bits)
+      return await this.#onReadDirect(bits)
   }
 
-  async #onReadBuffered(chunk: Uint8Array) {
-    this.#frame.write(chunk)
+  async #onReadBuffered(chunk: Uint8Array): Promise<Result<void, WebSocketContinuationFrameError | WebSocketNotContinuationFrameError | CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError | CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError>> {
+    const write = this.#frame.tryWrite(chunk)
+
+    if (write.isErr())
+      return write
+
     const full = this.#frame.before
 
     this.#frame.offset = 0
-    await this.#onReadDirect(full)
+    return await this.#onReadDirect(full)
   }
 
-  async #onReadDirect(chunk: Uint8Array) {
+  async #onReadDirect(chunk: Uint8Array): Promise<Result<void, WebSocketContinuationFrameError | WebSocketNotContinuationFrameError | CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError | CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError>> {
     const cursor = new Cursor(chunk)
 
     while (cursor.remaining) {
-      let frame = Readable.tryRead(WebSocketFrame, cursor)
+      const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor)
 
-      if (!frame) {
-        this.#frame.write(cursor.after)
+      if (frame.isErr()) {
+        const write = this.#frame.tryWrite(cursor.after)
+
+        if (write.isErr())
+          return write
+
         break
       }
 
-      await this.#onFrame(frame)
+      const result = await this.#onFrame(frame.inner)
+
+      if (result.isErr())
+        return result
+
+      continue
     }
+
+    return Ok.void()
   }
 
   async #onFrame(frame: WebSocketFrame) {
@@ -307,7 +374,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onStartFrame(frame)
   }
 
-  async #onFinalFrame(frame: WebSocketFrame) {
+  async #onFinalFrame(frame: WebSocketFrame): Promise<Result<void, CursorReadUnknownError | CursorWriteUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError | CursorWriteLengthOverflowError | BinaryWriteUnderflowError | WebSocketContinuationFrameError>> {
     if (frame.opcode === WebSocketFrame.opcodes.continuation)
       return await this.#onContinuationFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.ping)
@@ -318,63 +385,97 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onTextFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.close)
       return await this.#onCloseFrame(frame)
+
+    console.warn(`Unknown opcode`)
+    return Ok.void()
   }
 
-  async #onPingFrame(frame: WebSocketFrame) {
-    const pong = new WebSocketFrame(true, WebSocketFrame.opcodes.pong, frame.payload, Bytes.random(4))
-    this.#write(pong.prepare())
+  async #onPingFrame(frame: WebSocketFrame): Promise<Result<void, CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError>> {
+    const final = true
+    const opcode = WebSocketFrame.opcodes.pong
+    const payload = frame.payload
+    const mask = Bytes.random(4)
+
+    const pong = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+
+    return this.#tryWrite(pong.inner)
   }
 
-  async #onBinaryFrame(frame: WebSocketFrame) {
+  async #onBinaryFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
     if (this.binaryType === "blob")
       this.dispatchEvent(new MessageEvent("message", { data: new Blob([frame.payload]) }))
     else
       this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
+
+    return Ok.void()
   }
 
-  async #onTextFrame(frame: WebSocketFrame) {
+  async #onTextFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
     this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
+
+    return Ok.void()
   }
 
-  async #onCloseFrame(frame: WebSocketFrame) {
+  async #onCloseFrame(frame: WebSocketFrame): Promise<Result<void, CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError | CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError>> {
     if (this.readyState === this.OPEN) {
-      const echo = new WebSocketFrame(true, WebSocketFrame.opcodes.close, frame.payload, Bytes.random(4))
-      this.#write(echo.prepare())
+      const final = true
+      const opcode = WebSocketFrame.opcodes.close
+      const payload = frame.payload
+      const mask = Bytes.random(4)
+
+      const echo = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+
+      return this.#tryWrite(echo.inner)
     }
 
     this.#readyState = this.CLOSED
 
     if (frame.payload.length) {
-      const close = Readable.fromBytes(WebSocketClose, frame.payload)
-      this.#reader.error(close.reason)
+      const close = Readable.tryReadFromBytes(WebSocketClose, frame.payload)
+
+      if (close.isErr())
+        return close
+
+      this.#reader.error(close.inner.reason)
       this.#writer.close()
     } else {
       this.#reader.error()
       this.#writer.close()
     }
+
+    return Ok.void()
   }
 
-  async #onStartFrame(frame: WebSocketFrame) {
+  async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, CursorWriteLengthOverflowError | WebSocketNotContinuationFrameError>> {
     if (frame.opcode !== WebSocketFrame.opcodes.continuation) {
+
       if (this.#current.opcode !== undefined)
-        throw new Error(`Already received a start frame`)
+        return new Err(new WebSocketNotContinuationFrameError())
+
       this.#current.opcode = frame.opcode
     }
 
-    this.#current.buffer.write(frame.payload)
+    return this.#current.buffer.tryWrite(frame.payload)
   }
 
-  async #onContinuationFrame(frame: WebSocketFrame) {
-    this.#current.buffer.write(frame.payload)
+  async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError | CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError | WebSocketContinuationFrameError>> {
+    const write = this.#current.buffer.tryWrite(frame.payload)
+
+    if (write.isErr())
+      return write
 
     if (this.#current.opcode === undefined)
-      throw new Error(`Received early continuation frame`)
+      return new Err(new WebSocketContinuationFrameError())
 
+    const final = true
+    const opcode = this.#current.opcode
     const payload = new Uint8Array(this.#current.buffer.before)
-    const full = new WebSocketFrame(true, this.#current.opcode, payload)
+    const full = WebSocketFrame.tryNew({ final, opcode, payload })
+
     this.#current.opcode = undefined
     this.#current.buffer.offset = 0
-    await this.#onFinalFrame(full)
+
+    return await this.#onFinalFrame(full.inner)
   }
 
 }
