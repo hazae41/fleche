@@ -38,7 +38,7 @@ export class PipeError extends Error {
 
     const { signal } = controller
 
-    if (body)
+    if (body !== null)
       body.pipeTo(http.writable, { signal }).catch(e => future.resolve(new Err(new PipeError(e))))
     else
       http.writable.close().catch(e => future.resolve(new Err(new PipeError(e))))
