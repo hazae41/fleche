@@ -7,7 +7,7 @@ export default function Home() {
   const onClick = useCallback(async () => {
     try {
       const tcp = await createWebSocketStream("ws://localhost:8080")
-      const ws = new Fleche.WebSocket("ws://localhost", undefined, { stream: tcp })
+      const ws = new Fleche.WebSocket("ws://localhost", undefined, { subduplex: tcp })
 
       ws.binaryType = "arraybuffer"
 
