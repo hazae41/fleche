@@ -93,7 +93,7 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
 
     this.#onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
       if (this.#closed) return
-      console.log("onmessage", this)
+
       const bytes = new Uint8Array(msgEvent.data)
       console.debug("ws <-", bytes)
       controller.enqueue(new Opaque(bytes))
