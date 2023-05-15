@@ -1,11 +1,51 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Future } from "@hazae41/future"
-import { AbortEvent, CloseError, ErrorError } from "@hazae41/plume"
-import { Ok } from "@hazae41/result"
+import { Some } from "@hazae41/option"
+import { AbortError, Cleanable, CloseError, ErrorError } from "@hazae41/plume"
+import { Err, Ok, Result } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
   stream: ReadableWritablePair<Opaque, Writable>
+}
+
+namespace Requests {
+
+  export async function getBody(request: Request, init: RequestInit) {
+    /**
+     * Firefox fix
+     */
+    if (request.body === undefined && init.body !== undefined) {
+      if (init.body instanceof ReadableStream) {
+        return init.body as ReadableStream<Uint8Array>
+      } else {
+        const blob = await request.blob()
+        return blob.stream()
+      }
+    }
+
+    return request.body
+  }
+
+}
+
+export class PipeError extends Error {
+  readonly #class = PipeError
+
+  static wait(body: ReadableStream<Uint8Array> | null, http: HttpClientDuplex) {
+    const controller = new AbortController()
+    const future = new Future<Err<PipeError>>()
+
+    const { signal } = controller
+
+    if (body)
+      body.pipeTo(http.writable, { signal }).catch(e => future.resolve(new Err(new PipeError(e))))
+    else
+      http.writable.close().catch(e => future.resolve(new Err(new PipeError(e))))
+
+    return new Cleanable(future.promise, () => controller.abort())
+  }
+
 }
 
 /**
@@ -16,10 +56,21 @@ export interface FetchParams {
  * @returns 
  */
 export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams) {
+  return await tryFetch(input, init).then(r => r.unwrap())
+}
+
+/**
+ * Fetch adapter for HTTP streams
+ * Will wait for response to be available
+ * @param input "https://google.com"
+ * @param init.stream Transport substream
+ * @returns 
+ */
+export async function tryFetch(input: RequestInfo | URL, init: RequestInit & FetchParams): Promise<Result<Response, AbortError | ErrorError | CloseError | PipeError>> {
   const { stream, ...initRest } = init
 
   const request = new Request(input, initRest)
-  const future = new Future<Response>()
+  const body = await Requests.getBody(request, initRest)
 
   const { url, method, signal } = request
   const { host, pathname } = new URL(url)
@@ -34,60 +85,15 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
 
   const http = new HttpClientDuplex(stream, { pathname, method, headers, signal })
 
-  const onHead = (init: ResponseInit) => {
+  const abort = AbortError.wait(signal)
+  const error = ErrorError.wait(http.reading)
+  const close = CloseError.wait(http.reading)
+  const pipe = PipeError.wait(body, http)
+
+  const head = http.reading.wait("head", init => {
     const response = new Response(http.readable, init)
-    future.resolve(response)
-    return Ok.void()
-  }
+    return new Ok(new Some(new Ok(response)))
+  })
 
-  const onAbort = (event: Event) => {
-    const abortEvent = event as AbortEvent
-    const error = new Error(`Aborted`, { cause: abortEvent.target.reason })
-    future.reject(error)
-  }
-
-  const onClose = () => {
-    const error = new CloseError(`Closed`)
-    future.reject(error)
-    return Ok.void()
-  }
-
-  const onError = (cause?: unknown) => {
-    const error = new ErrorError(`Errored`, { cause })
-    future.reject(error)
-    return Ok.void()
-  }
-
-  try {
-    signal.addEventListener("abort", onAbort, { passive: true })
-    http.reading.on("close", onClose, { passive: true })
-    http.reading.on("error", onError, { passive: true })
-    http.reading.on("head", onHead, { passive: true })
-
-    let body = request.body
-
-    /**
-     * Firefox fix
-     */
-    if (body === undefined && init.body !== undefined) {
-      if (init.body instanceof ReadableStream) {
-        body = init.body
-      } else {
-        const blob = await request.blob()
-        body = blob.stream()
-      }
-    }
-
-    if (body)
-      body.pipeTo(http.writable, { signal }).catch(future.reject)
-    else
-      http.writable.close().catch(future.reject)
-
-    return await future.promise
-  } finally {
-    signal.removeEventListener("abort", onAbort)
-    http.reading.off("close", onClose)
-    http.reading.off("error", onError)
-    http.reading.off("head", onHead)
-  }
+  return await Cleanable.race<Result<Response, AbortError | ErrorError | CloseError | PipeError>>([abort, error, close, pipe, head])
 }
