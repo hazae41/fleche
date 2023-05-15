@@ -22,13 +22,16 @@ export class WebSocketFrame {
     pong: 10
   } as const
 
+  readonly length: Length
+
   private constructor(
     readonly final: boolean,
     readonly opcode: number,
     readonly payload: Uint8Array,
-    readonly payloadLength: Length,
     readonly mask: Option<Bytes<4>>,
-  ) { }
+  ) {
+    this.length = new Length(this.payload.length)
+  }
 
   static tryNew(params: {
     final: boolean,
@@ -38,10 +41,9 @@ export class WebSocketFrame {
   }): Result<WebSocketFrame, never> {
     const { final, opcode, payload } = params
 
-    const length = new Length(payload.length)
     const mask = Option.from(params.mask)
 
-    return new Ok(new WebSocketFrame(final, opcode, payload, length, mask))
+    return new Ok(new WebSocketFrame(final, opcode, payload, mask))
   }
 
   /**
@@ -54,7 +56,7 @@ export class WebSocketFrame {
       + 3 // RSV
       + 4 // opcode
       + 1 // MASK
-      + this.payloadLength.trySize().inner
+      + this.length.trySize().inner
       + this.mask.mapOrSync(0, x => x.length * 8)
       + this.payload.length * 8)
   }
@@ -80,7 +82,7 @@ export class WebSocketFrame {
       const masked = Boolean(this.mask)
       cursor.tryWriteUint8(Number(masked)).throw(t)
 
-      this.payloadLength.tryWrite(cursor).throw(t)
+      this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
         cursor.tryWrite(unpack(this.mask.inner)).throw(t)

@@ -158,6 +158,30 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return 0
   }
 
+  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
+    if (typeof data === "string")
+      return this.#trySplit(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data)).unwrap()
+    else if (data instanceof Blob)
+      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer())).unwrap()
+    else if ("buffer" in data)
+      return this.#trySplit(WebSocketFrame.opcodes.binary, Bytes.fromView(data)).unwrap()
+    else
+      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(data)).unwrap()
+  }
+
+  close(code = 1000, reason?: string): void {
+    const final = true
+    const opcode = WebSocketFrame.opcodes.close
+    const close = WebSocketClose.tryNew(code, reason)
+    const payload = Writable.tryWriteToBytes(close.inner).unwrap()
+    const mask = Bytes.random(4)
+
+    const frame = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+
+    this.#tryWrite(frame.inner).unwrap()
+    this.#readyState = this.CLOSING
+  }
+
   #tryWrite(frame: WebSocketFrame): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError | BinaryWriteUnderflowError> {
     const bits = Writable.tryWriteToBytes(frame)
 
@@ -212,29 +236,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     }
 
     return result.value
-  }
-
-  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
-    if (typeof data === "string")
-      return this.#trySplit(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data)).unwrap()
-    else if (data instanceof Blob)
-      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer())).unwrap()
-    else if ("buffer" in data)
-      return this.#trySplit(WebSocketFrame.opcodes.binary, Bytes.fromView(data)).unwrap()
-    else
-      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(data)).unwrap()
-  }
-
-  close(code = 1000, reason?: string): void {
-    const final = true
-    const opcode = WebSocketFrame.opcodes.close
-    const close = WebSocketClose.tryNew(code, reason)
-    const payload = Writable.tryWriteToBytes(close.inner).unwrap()
-    const mask = Bytes.random(4)
-
-    const frame = WebSocketFrame.tryNew({ final, opcode, payload, mask })
-    this.#tryWrite(frame.inner).unwrap()
-    this.#readyState = this.CLOSING
   }
 
   async #onHead(response: ResponseInit) {

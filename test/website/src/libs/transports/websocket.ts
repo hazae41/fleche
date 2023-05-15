@@ -75,15 +75,11 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
     readonly params: WebSocketSourceParams = {}
   ) { }
 
-  #closed?: { reason?: unknown }
-
   #onMessage?: (e: MessageEvent<ArrayBuffer>) => void
   #onClose?: (e: CloseEvent) => void
   #onError?: (e: Event) => void
 
-  #close(reason?: unknown) {
-    this.#closed = { reason }
-
+  #close() {
     this.websocket.removeEventListener("message", this.#onMessage!)
     this.websocket.removeEventListener("close", this.#onClose!)
     this.websocket.removeEventListener("error", this.#onError!)
@@ -92,8 +88,6 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
   async start(controller: ReadableStreamDefaultController<Opaque>) {
 
     this.#onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
-      if (this.#closed) return
-
       const bytes = new Uint8Array(msgEvent.data)
       console.debug("ws <-", bytes)
       controller.enqueue(new Opaque(bytes))
@@ -102,7 +96,7 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
     this.#onError = (event: Event) => {
       const error = new Error(`Errored`, { cause: event })
       controller.error(error)
-      this.#close(error)
+      this.#close()
     }
 
     this.#onClose = (event: CloseEvent) => {
@@ -150,14 +144,10 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
     readonly params: WebSocketSinkParams = {}
   ) { }
 
-  #closed?: { reason?: unknown }
-
   #onClose?: (e: CloseEvent) => void
   #onError?: (e: Event) => void
 
-  #close(reason?: unknown) {
-    this.#closed = { reason }
-
+  #close() {
     this.websocket.removeEventListener("close", this.#onClose!)
     this.websocket.removeEventListener("error", this.#onError!)
   }
@@ -167,13 +157,13 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
     this.#onClose = (closeEvent: CloseEvent) => {
       const error = new Error(`Closed`, { cause: closeEvent })
       controller.error(error)
-      this.#close(error)
+      this.#close()
     }
 
     this.#onError = (event: Event) => {
       const error = new Error(`Errored`, { cause: event })
       controller.error(error)
-      this.#close(error)
+      this.#close()
     }
 
     this.websocket.addEventListener("error", this.#onError, { passive: true })
@@ -198,7 +188,7 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
     if (this.params.shouldCloseOnAbort)
       await tryClose(this.websocket)
 
-    this.#close(reason)
+    this.#close()
 
     return Ok.void()
   }
