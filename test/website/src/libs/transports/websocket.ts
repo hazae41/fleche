@@ -1,5 +1,5 @@
 import { Opaque, Writable } from "@hazae41/binary"
-import { ResultableUnderlyingDefaultSource, ResultableUnderlyingSink, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade"
+import { ResultableUnderlyingDefaultSource, ResultableUnderlyingSink, SuperReadableStream, SuperReadableStreamDefaultController, SuperWritableStream } from "@hazae41/cascade"
 import { Ok, Result } from "@hazae41/result"
 
 export async function createWebSocketStream(url: string) {
@@ -15,7 +15,7 @@ export async function createWebSocketStream(url: string) {
   return new WebSocketStream(websocket)
 }
 
-async function tryClose(websocket: WebSocket) {
+async function closeOrThrow(websocket: WebSocket) {
   await new Promise<void>((ok, err) => {
     const onClose = (e: CloseEvent) => {
       if (e.wasClean)
@@ -85,7 +85,7 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
     this.websocket.removeEventListener("error", this.#onError!)
   }
 
-  async start(controller: ReadableStreamDefaultController<Opaque>) {
+  async start(controller: SuperReadableStreamDefaultController<Opaque>) {
 
     this.#onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
       const bytes = new Uint8Array(msgEvent.data)
@@ -186,7 +186,7 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
 
   async abort(reason?: unknown) {
     if (this.params.shouldCloseOnAbort)
-      await tryClose(this.websocket)
+      await closeOrThrow(this.websocket)
 
     this.#close()
 
@@ -195,7 +195,7 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
 
   async close() {
     if (this.params.shouldCloseOnClose)
-      await tryClose(this.websocket)
+      await closeOrThrow(this.websocket)
 
     this.#close()
 

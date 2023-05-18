@@ -84,6 +84,14 @@ export class HttpClientDuplex {
     await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
   }
 
+  async #onWriteClose() {
+    console.debug(`${this.#class.name}.onWriteClose`)
+
+    this.#writer.closed = {}
+
+    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
+  }
+
   async #onReadError(reason?: unknown) {
     console.debug(`${this.#class.name}.onReadError`, reason)
 
@@ -91,14 +99,6 @@ export class HttpClientDuplex {
     this.#writer.error(reason)
 
     await this.reading.tryEmit("error", reason).then(r => r.unwrap())
-  }
-
-  async #onWriteClose() {
-    console.debug(`${this.#class.name}.onWriteClose`)
-
-    this.#writer.closed = {}
-
-    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
   }
 
   async #onWriteError(reason?: unknown) {

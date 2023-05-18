@@ -32,7 +32,7 @@ namespace Requests {
 export class PipeError extends Error {
   readonly #class = PipeError
 
-  static wait(body: ReadableStream<Uint8Array> | null, http: HttpClientDuplex) {
+  static wait(http: HttpClientDuplex, body: ReadableStream<Uint8Array> | null) {
     const controller = new AbortController()
     const future = new Future<Err<PipeError>>()
 
@@ -88,7 +88,7 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const abort = AbortError.wait(signal)
   const error = ErrorError.wait(http.reading)
   const close = CloseError.wait(http.reading)
-  const pipe = PipeError.wait(body, http)
+  const pipe = PipeError.wait(http, body)
 
   const head = http.reading.wait("head", init => {
     const response = new Response(http.readable, init)

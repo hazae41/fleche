@@ -182,89 +182,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#readyState = this.CLOSING
   }
 
-  #tryWrite(frame: WebSocketFrame): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError | BinaryWriteUnderflowError> {
-    const bits = Writable.tryWriteToBytes(frame)
-
-    if (bits.isErr())
-      return bits
-
-    const bytes = pack_right(bits.inner)
-    this.#writer.enqueue(bytes)
-
-    return Ok.void()
-  }
-
-  #trySplit(opcode: number, data: Uint8Array): Result<void, CursorReadLengthOverflowError | CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError> {
-    const chunks = new Cursor(data).trySplit(32_768)
-    const peeker = Iterators.peek(chunks)
-
-    const first = peeker.next()
-
-    if (first.done)
-      return Ok.void()
-
-    const { current, next } = first.value
-    const final = Boolean(next.done)
-    const mask = Bytes.random(4)
-
-    const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
-
-    // console.debug(this.#class.name, "->", current.length)
-    const write = this.#tryWrite(frame.inner)
-
-    if (write.isErr())
-      return write
-
-    let result = peeker.next()
-
-    while (!result.done) {
-      const { current, next } = result.value
-
-      const final = Boolean(next.done)
-      const opcode = WebSocketFrame.opcodes.continuation
-      const mask = Bytes.random(4)
-
-      const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
-
-      // console.debug(this.#class.name, "-> (continuation)", current.length)
-      const write = this.#tryWrite(frame.inner)
-
-      if (write.isErr())
-        return write
-
-      result = peeker.next()
-    }
-
-    return result.value
-  }
-
-  async #onHead(response: ResponseInit) {
-    const { headers, status } = response
-
-    if (status !== 101)
-      throw new Error(`Invalid HTTP status code ${status}`)
-
-    const headers2 = new Headers(headers)
-
-    if (!Strings.equalsIgnoreCase(headers2.get("Connection"), "Upgrade"))
-      throw new Error(`Invalid Connection header value`)
-    if (!Strings.equalsIgnoreCase(headers2.get("Upgrade"), "websocket"))
-      throw new Error(`Invalid Upgrade header value`)
-
-    const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
-    const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
-
-    if (headers2.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
-      throw new Error(`Invalid Sec-WebSocket-Accept header value`)
-
-    this.#readyState = this.OPEN
-
-    const openEvent = new Event("open")
-    this.dispatchEvent(openEvent)
-
-    return Ok.void()
-  }
-
   async #onReadClose() {
     console.debug(`${this.#class.name}.onReadClose`)
 
@@ -309,6 +226,33 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const closeEvent = new CloseEvent("close", { wasClean: false })
     this.dispatchEvent(closeEvent)
+  }
+
+  async #onHead(response: ResponseInit) {
+    const { headers, status } = response
+
+    if (status !== 101)
+      throw new Error(`Invalid HTTP status code ${status}`)
+
+    const headers2 = new Headers(headers)
+
+    if (!Strings.equalsIgnoreCase(headers2.get("Connection"), "Upgrade"))
+      throw new Error(`Invalid Connection header value`)
+    if (!Strings.equalsIgnoreCase(headers2.get("Upgrade"), "websocket"))
+      throw new Error(`Invalid Upgrade header value`)
+
+    const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
+
+    if (headers2.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
+      throw new Error(`Invalid Sec-WebSocket-Accept header value`)
+
+    this.#readyState = this.OPEN
+
+    const openEvent = new Event("open")
+    this.dispatchEvent(openEvent)
+
+    return Ok.void()
   }
 
   async #onReadStart(): Promise<Result<void, never>> {
@@ -437,11 +381,13 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       if (close.isErr())
         return close
 
-      this.#reader.error(close.inner.reason)
-      this.#writer.close()
+      const reason = close.inner.reason.mapSync(Bytes.toUtf8)
+
+      this.#reader.tryError(reason.inner).inspectErrSync(console.warn)
+      this.#writer.tryClose().inspectErrSync(console.warn)
     } else {
-      this.#reader.error()
-      this.#writer.close()
+      this.#reader.tryError().inspectErrSync(console.warn)
+      this.#writer.tryClose().inspectErrSync(console.warn)
     }
 
     return Ok.void()
@@ -477,6 +423,62 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#current.buffer.offset = 0
 
     return await this.#onFinalFrame(full.inner)
+  }
+
+  #tryWrite(frame: WebSocketFrame): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError | BinaryWriteUnderflowError> {
+    const bits = Writable.tryWriteToBytes(frame)
+
+    if (bits.isErr())
+      return bits
+
+    const bytes = pack_right(bits.inner)
+    this.#writer.enqueue(bytes)
+
+    return Ok.void()
+  }
+
+  #trySplit(opcode: number, data: Uint8Array): Result<void, CursorReadLengthOverflowError | CursorWriteLengthOverflowError | CursorWriteUnknownError | BinaryWriteUnderflowError> {
+    const chunks = new Cursor(data).trySplit(32_768)
+    const peeker = Iterators.peek(chunks)
+
+    const first = peeker.next()
+
+    if (first.done)
+      return Ok.void()
+
+    const { current, next } = first.value
+    const final = Boolean(next.done)
+    const mask = Bytes.random(4)
+
+    const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+
+    // console.debug(this.#class.name, "->", current.length)
+    const write = this.#tryWrite(frame.inner)
+
+    if (write.isErr())
+      return write
+
+    let result = peeker.next()
+
+    while (!result.done) {
+      const { current, next } = result.value
+
+      const final = Boolean(next.done)
+      const opcode = WebSocketFrame.opcodes.continuation
+      const mask = Bytes.random(4)
+
+      const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+
+      // console.debug(this.#class.name, "-> (continuation)", current.length)
+      const write = this.#tryWrite(frame.inner)
+
+      if (write.isErr())
+        return write
+
+      result = peeker.next()
+    }
+
+    return result.value
   }
 
 }
