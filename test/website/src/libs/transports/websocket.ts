@@ -1,6 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { ResultableUnderlyingDefaultSource, ResultableUnderlyingSink, SuperReadableStream, SuperReadableStreamDefaultController, SuperWritableStream } from "@hazae41/cascade"
-import { Ok, Result } from "@hazae41/result"
+import { Ok, Panic, Result } from "@hazae41/result"
 
 export async function tryCreateWebSocketStream(url: string) {
   const websocket = new WebSocket(url)
@@ -56,9 +56,9 @@ export class WebSocketStream {
 
   static tryNew(socket: WebSocket, params?: WebSocketStreamParams) {
     if (socket.readyState !== WebSocket.OPEN)
-      throw new Error(`WebSocket is not open`)
+      throw new Panic(`WebSocket is not open`)
     if (socket.binaryType !== "arraybuffer")
-      throw new Error(`WebSocket binaryType is not arraybuffer`)
+      throw new Panic(`WebSocket binaryType is not arraybuffer`)
 
     return new WebSocketStream(socket, params)
   }
