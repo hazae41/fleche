@@ -9,6 +9,7 @@ import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
+import { ExpectedContinuationFrameError, InvalidHttpHeaderValue, InvalidHttpStatusCode, UnexpectedContinuationFrameError } from "./errors.js";
 import { WebSocketFrame } from "./frame.js";
 
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
@@ -23,24 +24,6 @@ export class WebSocketMessageState {
   readonly buffer = Cursor.allocUnsafe(16 * 1024 * 1024)
 
   opcode?: number
-
-}
-
-export class WebSocketContinuationFrameError extends Error {
-  readonly #class = WebSocketContinuationFrameError
-
-  constructor() {
-    super(`Did not expect a continuation frame`)
-  }
-
-}
-
-export class WebSocketNotContinuationFrameError extends Error {
-  readonly #class = WebSocketNotContinuationFrameError
-
-  constructor() {
-    super(`Expected a continuation frame`)
-  }
 
 }
 
@@ -125,11 +108,17 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   addEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+
+  addEventListener(type: string, callback: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void
+
   addEventListener(type: string, callback: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void {
     super.addEventListener(type, callback, options)
   }
 
   removeEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void
+
   removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void {
     super.removeEventListener(type, listener, options)
   }
@@ -241,24 +230,22 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.dispatchEvent(closeEvent)
   }
 
-  async #onHead(response: ResponseInit) {
-    const { headers, status } = response
+  async #onHead(init: ResponseInit): Promise<Result<void, InvalidHttpStatusCode | InvalidHttpHeaderValue>> {
+    const { headers, status } = new Response(undefined, init)
 
     if (status !== 101)
-      throw new Error(`Invalid HTTP status code ${status}`)
+      return new Err(new InvalidHttpStatusCode(status))
 
-    const headers2 = new Headers(headers)
-
-    if (!Strings.equalsIgnoreCase(headers2.get("Connection"), "Upgrade"))
-      throw new Error(`Invalid Connection header value`)
-    if (!Strings.equalsIgnoreCase(headers2.get("Upgrade"), "websocket"))
-      throw new Error(`Invalid Upgrade header value`)
+    if (!Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade"))
+      return new Err(new InvalidHttpHeaderValue("Connection"))
+    if (!Strings.equalsIgnoreCase(headers.get("Upgrade"), "websocket"))
+      return new Err(new InvalidHttpHeaderValue("Upgrade"))
 
     const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
-    if (headers2.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
-      throw new Error(`Invalid Sec-WebSocket-Accept header value`)
+    if (headers.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
+      return new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept"))
 
     this.#readyState = this.OPEN
 
@@ -274,7 +261,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketContinuationFrameError | WebSocketNotContinuationFrameError | BinaryError>> {
+  async #onRead(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
     // console.debug(this.#class.name, "<-", chunk.length)
 
     const bits = unpack(chunk)
@@ -285,7 +272,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onReadDirect(bits)
   }
 
-  async #onReadBuffered(chunk: Uint8Array): Promise<Result<void, WebSocketContinuationFrameError | WebSocketNotContinuationFrameError | BinaryError>> {
+  async #onReadBuffered(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
     const write = this.#frame.tryWrite(chunk)
 
     if (write.isErr())
@@ -297,7 +284,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return await this.#onReadDirect(full)
   }
 
-  async #onReadDirect(chunk: Uint8Array): Promise<Result<void, WebSocketContinuationFrameError | WebSocketNotContinuationFrameError | BinaryError>> {
+  async #onReadDirect(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
     const cursor = new Cursor(chunk)
 
     while (cursor.remaining) {
@@ -332,7 +319,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onStartFrame(frame)
   }
 
-  async #onFinalFrame(frame: WebSocketFrame): Promise<Result<void, WebSocketContinuationFrameError | BinaryError>> {
+  async #onFinalFrame(frame: WebSocketFrame): Promise<Result<void, UnexpectedContinuationFrameError | BinaryError>> {
     if (frame.opcode === WebSocketFrame.opcodes.continuation)
       return await this.#onContinuationFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.ping)
@@ -406,11 +393,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, WebSocketNotContinuationFrameError | CursorWriteLengthOverflowError>> {
+  async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, ExpectedContinuationFrameError | CursorWriteLengthOverflowError>> {
     if (frame.opcode !== WebSocketFrame.opcodes.continuation) {
 
       if (this.#current.opcode !== undefined)
-        return new Err(new WebSocketNotContinuationFrameError())
+        return new Err(new ExpectedContinuationFrameError())
 
       this.#current.opcode = frame.opcode
     }
@@ -418,14 +405,14 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return this.#current.buffer.tryWrite(frame.payload)
   }
 
-  async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, WebSocketContinuationFrameError | BinaryError>> {
+  async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, UnexpectedContinuationFrameError | BinaryError>> {
     const write = this.#current.buffer.tryWrite(frame.payload)
 
     if (write.isErr())
       return write
 
     if (this.#current.opcode === undefined)
-      return new Err(new WebSocketContinuationFrameError())
+      return new Err(new UnexpectedContinuationFrameError())
 
     const final = true
     const opcode = this.#current.opcode

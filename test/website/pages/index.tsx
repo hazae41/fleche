@@ -1,12 +1,12 @@
 import { Fleche } from "@hazae41/fleche"
-import { createWebSocketStream } from "libs/transports/websocket"
+import { tryCreateWebSocketStream } from "libs/transports/websocket"
 import { useCallback } from "react"
 
 export default function Home() {
 
   const onClick = useCallback(async () => {
     try {
-      const tcp = await createWebSocketStream("ws://localhost:8080")
+      const tcp = await tryCreateWebSocketStream("ws://localhost:8080")
       const ws = new Fleche.WebSocket("ws://localhost", undefined, { subduplex: tcp })
 
       ws.binaryType = "arraybuffer"
@@ -24,7 +24,8 @@ export default function Home() {
       })
 
       const bytes = new Uint8Array([1, 2, 3])
-      ws.send(bytes)
+
+      await ws.send(bytes)
     } catch (e: unknown) {
       console.error(e)
     }

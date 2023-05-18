@@ -2,7 +2,7 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { ResultableUnderlyingDefaultSource, ResultableUnderlyingSink, SuperReadableStream, SuperReadableStreamDefaultController, SuperWritableStream } from "@hazae41/cascade"
 import { Ok, Result } from "@hazae41/result"
 
-export async function createWebSocketStream(url: string) {
+export async function tryCreateWebSocketStream(url: string) {
   const websocket = new WebSocket(url)
 
   websocket.binaryType = "arraybuffer"
@@ -12,7 +12,7 @@ export async function createWebSocketStream(url: string) {
     websocket.addEventListener("error", err)
   })
 
-  return new WebSocketStream(websocket)
+  return WebSocketStream.tryNew(websocket)
 }
 
 async function closeOrThrow(websocket: WebSocket) {
@@ -43,20 +43,24 @@ export class WebSocketStream {
    * A WebSocket stream
    * @description https://streams.spec.whatwg.org/#example-both
    */
-  constructor(
-    readonly websocket: WebSocket,
+  private constructor(
+    readonly socket: WebSocket,
     readonly params: WebSocketStreamParams = {}
   ) {
-    if (websocket.readyState !== WebSocket.OPEN)
-      throw new Error(`WebSocket is not open`)
-    if (websocket.binaryType !== "arraybuffer")
-      throw new Error(`WebSocket binaryType is not arraybuffer`)
-
-    this.reader = new SuperReadableStream(new WebSocketSource(websocket, params))
-    this.writer = new SuperWritableStream(new WebSocketSink(websocket, params))
+    this.reader = new SuperReadableStream(new WebSocketSource(socket, params))
+    this.writer = new SuperWritableStream(new WebSocketSink(socket, params))
 
     this.readable = this.reader.start()
     this.writable = this.writer.start()
+  }
+
+  static tryNew(socket: WebSocket, params?: WebSocketStreamParams) {
+    if (socket.readyState !== WebSocket.OPEN)
+      throw new Error(`WebSocket is not open`)
+    if (socket.binaryType !== "arraybuffer")
+      throw new Error(`WebSocket binaryType is not arraybuffer`)
+
+    return new WebSocketStream(socket, params)
   }
 }
 
