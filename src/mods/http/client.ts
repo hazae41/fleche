@@ -81,7 +81,7 @@ export class HttpClientDuplex {
 
     this.#reader.closed = {}
 
-    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
+    await this.reading.emit("close", undefined)
   }
 
   async #onWriteClose() {
@@ -89,7 +89,7 @@ export class HttpClientDuplex {
 
     this.#writer.closed = {}
 
-    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
+    await this.reading.emit("close", undefined)
   }
 
   async #onReadError(reason?: unknown) {
@@ -98,7 +98,7 @@ export class HttpClientDuplex {
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.tryEmit("error", reason).then(r => r.unwrap())
+    await this.reading.emit("error", reason)
   }
 
   async #onWriteError(reason?: unknown) {
@@ -107,7 +107,7 @@ export class HttpClientDuplex {
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.reading.tryEmit("error", reason).then(r => r.unwrap())
+    await this.reading.emit("error", reason)
   }
 
   async #onRead(chunk: Opaque) {

@@ -187,7 +187,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#reader.closed = {}
 
-    await this.reading.tryEmit("close", undefined).then(r => r.unwrap())
+    await this.reading.emit("close", undefined)
   }
 
   async #onWriteClose() {
@@ -195,7 +195,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#writer.closed = {}
 
-    await this.writing.tryEmit("close", undefined).then(r => r.unwrap())
+    await this.writing.emit("close", undefined)
   }
 
   async #onReadError(reason?: unknown) {
@@ -204,7 +204,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.tryEmit("error", reason).then(r => r.unwrap())
+    await this.reading.emit("error", reason)
 
     await this.#onError(reason)
   }
@@ -215,7 +215,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.writing.tryEmit("error", reason).then(r => r.unwrap())
+    await this.writing.emit("error", reason)
 
     await this.#onError(reason)
   }
