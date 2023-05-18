@@ -2,7 +2,7 @@ export class InvalidHttpStatusCode extends Error {
   readonly #class = InvalidHttpStatusCode
 
   constructor(
-    readonly status: number
+    readonly status?: number
   ) {
     super(`Invalid HTTP status code ${status}`)
   }

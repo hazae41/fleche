@@ -208,8 +208,8 @@ export class HttpClientDuplex {
       if (split === -1)
         return new Ok(new None())
 
-      const rawHead = buffer.bytes.subarray(0, split)
-      const rawBody = buffer.bytes.subarray(split + "\r\n\r\n".length, buffer.offset)
+      const rawHead = buffer.buffer.subarray(0, split)
+      const rawBody = buffer.buffer.subarray(split + "\r\n\r\n".length, buffer.offset)
 
       const [rawStatus, ...rawHeaders] = rawHead.toString().split("\r\n")
       const [version, statusString, statusText] = rawStatus.split(" ")

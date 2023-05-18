@@ -231,10 +231,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onHead(init: ResponseInit): Promise<Result<void, InvalidHttpStatusCode | InvalidHttpHeaderValue>> {
-    const { headers, status } = new Response(undefined, init)
+    const headers = new Headers(init.headers)
 
-    if (status !== 101)
-      return new Err(new InvalidHttpStatusCode(status))
+    if (init.status !== 101)
+      return new Err(new InvalidHttpStatusCode(init.status))
 
     if (!Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade"))
       return new Err(new InvalidHttpHeaderValue("Connection"))
