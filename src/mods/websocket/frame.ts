@@ -1,4 +1,4 @@
-import { BinaryReadUnderflowError } from "@hazae41/binary"
+import { CursorReadLengthUnderflowError } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor, CursorReadLengthOverflowError, CursorReadUnknownError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
@@ -100,7 +100,7 @@ export class WebSocketFrame {
    * @param cursor bits
    * @returns 
    */
-  static tryRead(cursor: Cursor): Result<WebSocketFrame, CursorReadUnknownError | CursorReadLengthOverflowError | BinaryReadUnderflowError | Bytes.CastError<4>> {
+  static tryRead(cursor: Cursor): Result<WebSocketFrame, CursorReadUnknownError | CursorReadLengthOverflowError | CursorReadLengthUnderflowError | Bytes.CastError<4>> {
     return Result.unthrowSync(t => {
       const final = Boolean(cursor.tryReadUint8().throw(t))
 
@@ -113,7 +113,7 @@ export class WebSocketFrame {
       const length = Length.tryRead(cursor).throw(t)
 
       if (cursor.remaining < length.value)
-        return new Err(new BinaryReadUnderflowError(cursor))
+        return new Err(new CursorReadLengthUnderflowError(cursor))
 
       if (masked) {
         const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t))
