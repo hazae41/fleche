@@ -158,7 +158,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return 0
   }
 
-  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
+  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob): Promise<void> {
     return await this.trySend(data).then(r => r.unwrap())
   }
 
