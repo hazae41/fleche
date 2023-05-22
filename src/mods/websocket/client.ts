@@ -206,7 +206,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     console.debug(`${this.#class.name}.onReadError`, error.cause)
 
     this.#reader.closed = { reason }
-    this.#writer.error(reason)
+    this.#writer.controller.inner.error(reason)
 
     await this.reading.emit("error", error.cause)
 
@@ -219,7 +219,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     console.debug(`${this.#class.name}.onWriteError`, error.cause)
 
     this.#writer.closed = { reason }
-    this.#reader.error(reason)
+    this.#reader.controller.inner.error(reason)
 
     await this.writing.emit("error", error.cause)
 
@@ -378,11 +378,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
         const reason = close.reason.mapSync(Bytes.toUtf8)
 
-        this.#reader.controller.tryError(reason.get()).inspectErrSync(console.warn)
-        this.#writer.controller.tryClose().inspectErrSync(console.warn)
+        this.#reader.tryError(reason.get()).inspectErrSync(console.warn)
+        this.#writer.tryClose().inspectErrSync(console.warn)
       } else {
-        this.#reader.controller.tryError().inspectErrSync(console.warn)
-        this.#writer.controller.tryClose().inspectErrSync(console.warn)
+        this.#reader.tryError().inspectErrSync(console.warn)
+        this.#writer.tryClose().inspectErrSync(console.warn)
       }
 
       return Ok.void()

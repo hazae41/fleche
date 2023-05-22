@@ -31,6 +31,11 @@ namespace Requests {
 
 export class PipeError extends Error {
   readonly #class = PipeError
+  readonly name = this.#class.name
+
+  constructor(options: ErrorOptions) {
+    super(undefined, options)
+  }
 
   static wait(http: HttpClientDuplex, body: ReadableStream<Uint8Array> | null) {
     const controller = new AbortController()
@@ -39,9 +44,9 @@ export class PipeError extends Error {
     const { signal } = controller
 
     if (body !== null)
-      body.pipeTo(http.writable, { signal }).catch(e => future.resolve(new Err(new PipeError(e))))
+      body.pipeTo(http.writable, { signal }).catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
     else
-      http.writable.close().catch(e => future.resolve(new Err(new PipeError(e))))
+      http.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
 
     return new Cleanable(future.promise, () => controller.abort())
   }

@@ -7,7 +7,9 @@ export default function Page() {
   const onClick = useCallback(async () => {
     try {
       const tcp = await tryCreateWebSocketStream("ws://localhost:8080")
-      const res = await Fleche.fetch("https://twitter.com", { stream: tcp })
+      const res = await Fleche.fetch("https://twitter.com/home", { stream: tcp })
+
+      console.log(res.status)
 
       const text = await res.text()
 

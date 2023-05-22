@@ -1,4 +1,5 @@
 import { Opaque, Writable } from "@hazae41/binary"
+import { Bytes } from "@hazae41/bytes"
 import { ResultableUnderlyingDefaultSource, ResultableUnderlyingSink, SuperReadableStream, SuperReadableStreamDefaultController, SuperWritableStream } from "@hazae41/cascade"
 import { Ok, Panic, Result } from "@hazae41/result"
 
@@ -93,7 +94,7 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
 
     this.#onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
       const bytes = new Uint8Array(msgEvent.data)
-      console.debug("ws <-", bytes)
+      console.debug("ws <-", bytes, Bytes.toUtf8(bytes))
       controller.enqueue(new Opaque(bytes))
     }
 
@@ -180,7 +181,7 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
     return await Result.unthrow(async t => {
       const bytes = Writable.tryWriteToBytes(chunk).throw(t)
 
-      console.debug("ws ->", bytes)
+      console.debug("ws ->", bytes, Bytes.toUtf8(bytes))
       this.websocket.send(bytes)
 
       return Ok.void()

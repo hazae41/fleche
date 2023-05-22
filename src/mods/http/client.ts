@@ -100,7 +100,7 @@ export class HttpClientDuplex {
     console.debug(`${this.#class.name}.onReadError`, error.cause)
 
     this.#reader.closed = { reason }
-    this.#writer.error(reason)
+    this.#writer.controller.inner.error(reason)
 
     await this.reading.emit("error", error.cause)
   }
@@ -111,7 +111,7 @@ export class HttpClientDuplex {
     console.debug(`${this.#class.name}.onWriteError`, error.cause)
 
     this.#writer.closed = { reason }
-    this.#reader.error(reason)
+    this.#reader.controller.inner.error(reason)
 
     await this.writing.emit("error", error.cause)
   }
