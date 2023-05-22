@@ -177,15 +177,14 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
   }
 
   async write(chunk: Writable): Promise<Result<void, unknown>> {
-    const bytes = Writable.tryWriteToBytes(chunk)
+    return await Result.unthrow(async t => {
+      const bytes = Writable.tryWriteToBytes(chunk).throw(t)
 
-    if (bytes.isErr())
-      return bytes
+      console.debug("ws ->", bytes)
+      this.websocket.send(bytes)
 
-    console.debug("ws ->", bytes.inner)
-    this.websocket.send(bytes.get())
-
-    return Ok.void()
+      return Ok.void()
+    })
   }
 
   async abort(reason?: unknown) {

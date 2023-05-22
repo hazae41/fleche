@@ -171,13 +171,13 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       const final = true
       const opcode = WebSocketFrame.opcodes.close
       const close = WebSocketClose.tryNew(code, reason)
-      const payload = Writable.tryWriteToBytes(close.inner).throw(t)
+      const payload = Writable.tryWriteToBytes(close.get()).throw(t)
 
       const mask = Bytes.random(4)
 
       const frame = WebSocketFrame.tryNew({ final, opcode, payload, mask })
 
-      this.#tryWrite(frame.inner).throw(t)
+      this.#tryWrite(frame.get()).throw(t)
       this.#readyState = this.CLOSING
 
       return Ok.void()
@@ -273,41 +273,34 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadBuffered(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
-    const write = this.#frame.tryWrite(chunk)
+    return await Result.unthrow(async t => {
+      this.#frame.tryWrite(chunk).throw(t)
 
-    if (write.isErr())
-      return write
+      const full = this.#frame.before
 
-    const full = this.#frame.before
-
-    this.#frame.offset = 0
-    return await this.#onReadDirect(full)
+      this.#frame.offset = 0
+      return await this.#onReadDirect(full)
+    })
   }
 
   async #onReadDirect(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
-    const cursor = new Cursor(chunk)
+    return await Result.unthrow(async t => {
+      const cursor = new Cursor(chunk)
 
-    while (cursor.remaining) {
-      const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor)
+      while (cursor.remaining) {
+        const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor)
 
-      if (frame.isErr()) {
-        const write = this.#frame.tryWrite(cursor.after)
+        if (frame.isErr()) {
+          this.#frame.tryWrite(cursor.after).throw(t)
 
-        if (write.isErr())
-          return write
+          break
+        }
 
-        break
+        await this.#onFrame(frame.get()).then(r => r.throw(t))
       }
 
-      const result = await this.#onFrame(frame.inner)
-
-      if (result.isErr())
-        return result
-
-      continue
-    }
-
-    return Ok.void()
+      return Ok.void()
+    })
   }
 
   async #onFrame(frame: WebSocketFrame) {
@@ -343,7 +336,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const pong = WebSocketFrame.tryNew({ final, opcode, payload, mask })
 
-    return this.#tryWrite(pong.inner)
+    return this.#tryWrite(pong.get())
   }
 
   async #onBinaryFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
@@ -362,35 +355,34 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onCloseFrame(frame: WebSocketFrame): Promise<Result<void, BinaryError>> {
-    if (this.readyState === this.OPEN) {
-      const final = true
-      const opcode = WebSocketFrame.opcodes.close
-      const payload = frame.payload
-      const mask = Bytes.random(4)
+    return await Result.unthrow(async t => {
+      if (this.readyState === this.OPEN) {
+        const final = true
+        const opcode = WebSocketFrame.opcodes.close
+        const payload = frame.payload
+        const mask = Bytes.random(4)
 
-      const echo = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+        const echo = WebSocketFrame.tryNew({ final, opcode, payload, mask })
 
-      return this.#tryWrite(echo.inner)
-    }
+        return this.#tryWrite(echo.get())
+      }
 
-    this.#readyState = this.CLOSED
+      this.#readyState = this.CLOSED
 
-    if (frame.payload.length) {
-      const close = Readable.tryReadFromBytes(WebSocketClose, frame.payload)
+      if (frame.payload.length) {
+        const close = Readable.tryReadFromBytes(WebSocketClose, frame.payload).throw(t)
 
-      if (close.isErr())
-        return close
+        const reason = close.reason.mapSync(Bytes.toUtf8)
 
-      const reason = close.inner.reason.mapSync(Bytes.toUtf8)
+        this.#reader.tryError(reason.get()).inspectErrSync(console.warn)
+        this.#writer.tryClose().inspectErrSync(console.warn)
+      } else {
+        this.#reader.tryError().inspectErrSync(console.warn)
+        this.#writer.tryClose().inspectErrSync(console.warn)
+      }
 
-      this.#reader.tryError(reason.inner).inspectErrSync(console.warn)
-      this.#writer.tryClose().inspectErrSync(console.warn)
-    } else {
-      this.#reader.tryError().inspectErrSync(console.warn)
-      this.#writer.tryClose().inspectErrSync(console.warn)
-    }
-
-    return Ok.void()
+      return Ok.void()
+    })
   }
 
   async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, ExpectedContinuationFrameError | CursorWriteLengthOverflowError>> {
@@ -406,79 +398,70 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, UnexpectedContinuationFrameError | BinaryError>> {
-    const write = this.#current.buffer.tryWrite(frame.payload)
+    return await Result.unthrow(async t => {
+      this.#current.buffer.tryWrite(frame.payload).throw(t)
 
-    if (write.isErr())
-      return write
+      if (this.#current.opcode === undefined)
+        return new Err(new UnexpectedContinuationFrameError())
 
-    if (this.#current.opcode === undefined)
-      return new Err(new UnexpectedContinuationFrameError())
+      const final = true
+      const opcode = this.#current.opcode
+      const payload = new Uint8Array(this.#current.buffer.before)
+      const full = WebSocketFrame.tryNew({ final, opcode, payload })
 
-    const final = true
-    const opcode = this.#current.opcode
-    const payload = new Uint8Array(this.#current.buffer.before)
-    const full = WebSocketFrame.tryNew({ final, opcode, payload })
+      this.#current.opcode = undefined
+      this.#current.buffer.offset = 0
 
-    this.#current.opcode = undefined
-    this.#current.buffer.offset = 0
-
-    return await this.#onFinalFrame(full.inner)
+      return await this.#onFinalFrame(full.get())
+    })
   }
 
   #tryWrite(frame: WebSocketFrame): Result<void, BinaryWriteError> {
-    const bits = Writable.tryWriteToBytes(frame)
+    return Result.unthrowSync(t => {
+      const bits = Writable.tryWriteToBytes(frame).throw(t)
+      const bytes = pack_right(bits)
+      this.#writer.enqueue(bytes)
 
-    if (bits.isErr())
-      return bits
-
-    const bytes = pack_right(bits.inner)
-    this.#writer.enqueue(bytes)
-
-    return Ok.void()
+      return Ok.void()
+    })
   }
 
   #trySplit(opcode: number, data: Uint8Array): Result<void, BinaryError> {
-    const chunks = new Cursor(data).trySplit(32_768)
-    const peeker = Iterators.peek(chunks)
+    return Result.unthrowSync(t => {
+      const chunks = new Cursor(data).trySplit(32_768)
+      const peeker = Iterators.peek(chunks)
 
-    const first = peeker.next()
+      const first = peeker.next()
 
-    if (first.done)
-      return Ok.void()
+      if (first.done)
+        return Ok.void()
 
-    const { current, next } = first.value
-    const final = Boolean(next.done)
-    const mask = Bytes.random(4)
-
-    const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
-
-    // console.debug(this.#class.name, "->", current.length)
-    const write = this.#tryWrite(frame.inner)
-
-    if (write.isErr())
-      return write
-
-    let result = peeker.next()
-
-    while (!result.done) {
-      const { current, next } = result.value
-
+      const { current, next } = first.value
       const final = Boolean(next.done)
-      const opcode = WebSocketFrame.opcodes.continuation
       const mask = Bytes.random(4)
 
       const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
 
-      // console.debug(this.#class.name, "-> (continuation)", current.length)
-      const write = this.#tryWrite(frame.inner)
+      // console.debug(this.#class.name, "->", current.length)
+      this.#tryWrite(frame.get()).throw(t)
 
-      if (write.isErr())
-        return write
+      let result = peeker.next()
 
-      result = peeker.next()
-    }
+      for (; !result.done; result = peeker.next()) {
+        const { current, next } = result.value
 
-    return result.value
+        const final = Boolean(next.done)
+        const opcode = WebSocketFrame.opcodes.continuation
+        const mask = Bytes.random(4)
+
+        const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+
+        // console.debug(this.#class.name, "-> (continuation)", current.length)
+        this.#tryWrite(frame.get()).throw(t)
+      }
+
+      return result.value
+    })
   }
 
 }

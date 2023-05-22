@@ -113,37 +113,36 @@ export class HttpClientDuplex {
   }
 
   async #onRead(chunk: Opaque): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding | CursorWriteLengthOverflowError | ContentLengthOverflowError | EventError>> {
-    // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
+    return await Result.unthrow(async t => {
+      // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
 
-    let bytes = chunk.bytes
+      let bytes = chunk.bytes
 
-    if (this.#state.type === "heading" || this.#state.type === "upgrading") {
-      const result = await this.#onReadHead(bytes, this.#state)
+      if (this.#state.type === "heading" || this.#state.type === "upgrading") {
+        const option = await this.#onReadHead(bytes, this.#state).then(r => r.throw(t))
 
-      if (result.isErr())
-        return result
+        if (!option.inner?.length)
+          return Ok.void()
 
-      if (!result.inner.inner?.length)
+        bytes = option.inner
+      }
+
+      if (this.#state.type === "upgraded") {
+        this.#reader.enqueue(bytes)
         return Ok.void()
+      }
 
-      bytes = result.inner.inner
-    }
+      if (this.#state.type === "headed") {
+        if (this.#state.server_transfer.type === "none")
+          return await this.#onReadNoneBody(bytes, this.#state)
+        if (this.#state.server_transfer.type === "lengthed")
+          return await this.#onReadLenghtedBody(bytes, this.#state)
+        if (this.#state.server_transfer.type === "chunked")
+          return await this.#onReadChunkedBody(bytes, this.#state)
+      }
 
-    if (this.#state.type === "upgraded") {
-      this.#reader.enqueue(bytes)
-      return Ok.void()
-    }
-
-    if (this.#state.type === "headed") {
-      if (this.#state.server_transfer.type === "none")
-        return await this.#onReadNoneBody(bytes, this.#state)
-      if (this.#state.server_transfer.type === "lengthed")
-        return await this.#onReadLenghtedBody(bytes, this.#state)
-      if (this.#state.server_transfer.type === "chunked")
-        return await this.#onReadChunkedBody(bytes, this.#state)
-    }
-
-    throw new Panic(`Invalid state`)
+      throw new Panic(`Invalid state`)
+    })
   }
 
   #getTransferFromHeaders(headers: Headers): Result<HttpTransfer, UnsupportedTransferEncoding> {
@@ -285,68 +284,64 @@ export class HttpClientDuplex {
   }
 
   async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, CursorWriteLengthOverflowError>> {
-    if (state.server_transfer.type !== "chunked")
-      throw new Panic(`Invalid state`)
+    return await Result.unthrow(async t => {
+      if (state.server_transfer.type !== "chunked")
+        throw new Panic(`Invalid state`)
 
-    const { server_transfer, server_compression } = state
-    const { buffer } = server_transfer
+      const { server_transfer, server_compression } = state
+      const { buffer } = server_transfer
 
-    const write = buffer.tryWrite(chunk)
+      buffer.tryWrite(chunk).throw(t)
 
-    if (write.isErr())
-      return write
+      let slice = buffer.buffer.subarray(0, buffer.offset)
 
-    let slice = buffer.buffer.subarray(0, buffer.offset)
+      while (slice.length) {
+        const index = slice.indexOf("\r\n")
 
-    while (slice.length) {
-      const index = slice.indexOf("\r\n")
+        // [...] => partial header => wait
+        if (index === -1) return Ok.void()
 
-      // [...] => partial header => wait
-      if (index === -1) return Ok.void()
+        // [length]\r\n(...) => full header => split it
+        const length = parseInt(slice.subarray(0, index).toString(), 16)
+        const rest = slice.subarray(index + 2)
 
-      // [length]\r\n(...) => full header => split it
-      const length = parseInt(slice.subarray(0, index).toString(), 16)
-      const rest = slice.subarray(index + 2)
+        if (length === 0) {
 
-      if (length === 0) {
+          if (server_compression.type === "gzip") {
+            const fchunk = server_compression.decoder.finish()
+            if (fchunk.length) this.#reader.enqueue(fchunk)
+          }
 
-        if (server_compression.type === "gzip") {
-          const fchunk = server_compression.decoder.finish()
-          if (fchunk.length) this.#reader.enqueue(fchunk)
+          this.#reader.terminate()
+          return Ok.void()
         }
 
-        this.#reader.terminate()
-        return Ok.void()
+        // len(...) < length + len(\r\n) => partial chunk => wait
+        if (rest.length < length + 2) break
+
+        // ([length]\r\n)[chunk]\r\n(...) => full chunk => split it
+        const chunk2 = rest.subarray(0, length)
+        const rest2 = rest.subarray(length + 2)
+
+        if (server_compression.type === "gzip") {
+          server_compression.decoder.write(chunk2)
+          server_compression.decoder.flush()
+
+          const dchunk2 = server_compression.decoder.read()
+          if (dchunk2.length) this.#reader.enqueue(dchunk2)
+        } else {
+          this.#reader.enqueue(chunk2)
+        }
+
+        buffer.offset = 0
+
+        buffer.tryWrite(rest2).throw(t)
+
+        slice = buffer.buffer.subarray(0, buffer.offset)
       }
 
-      // len(...) < length + len(\r\n) => partial chunk => wait
-      if (rest.length < length + 2) break
-
-      // ([length]\r\n)[chunk]\r\n(...) => full chunk => split it
-      const chunk2 = rest.subarray(0, length)
-      const rest2 = rest.subarray(length + 2)
-
-      if (server_compression.type === "gzip") {
-        server_compression.decoder.write(chunk2)
-        server_compression.decoder.flush()
-
-        const dchunk2 = server_compression.decoder.read()
-        if (dchunk2.length) this.#reader.enqueue(dchunk2)
-      } else {
-        this.#reader.enqueue(chunk2)
-      }
-
-      buffer.offset = 0
-
-      const write = buffer.tryWrite(rest2)
-
-      if (write.isErr())
-        return write
-
-      slice = buffer.buffer.subarray(0, buffer.offset)
-    }
-
-    return Ok.void()
+      return Ok.void()
+    })
   }
 
   async #onWriteStart(): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding>> {

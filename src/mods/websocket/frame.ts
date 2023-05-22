@@ -56,7 +56,7 @@ export class WebSocketFrame {
       + 3 // RSV
       + 4 // opcode
       + 1 // MASK
-      + this.length.trySize().inner
+      + this.length.trySize().get()
       + this.mask.mapOrSync(0, x => x.length * 8)
       + this.payload.length * 8)
   }
@@ -85,8 +85,8 @@ export class WebSocketFrame {
       this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
-        cursor.tryWrite(unpack(this.mask.inner)).throw(t)
-        xor_mod(this.payload, this.mask.inner)
+        cursor.tryWrite(unpack(this.mask.get())).throw(t)
+        xor_mod(this.payload, this.mask.get())
       }
 
       cursor.tryWrite(unpack(this.payload)).throw(t)
