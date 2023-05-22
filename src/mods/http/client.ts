@@ -1,6 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { SuperTransformStream } from "@hazae41/cascade"
+import { Cascade, SuperTransformStream } from "@hazae41/cascade"
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
@@ -95,21 +95,25 @@ export class HttpClientDuplex {
   }
 
   async #onReadError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, reason)
+    const error = Cascade.unthrow(reason).get()
+
+    console.debug(`${this.#class.name}.onReadError`, error.cause)
 
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.emit("error", reason)
+    await this.reading.emit("error", error.cause)
   }
 
   async #onWriteError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onWriteError`, reason)
+    const error = Cascade.unthrow(reason).get()
+
+    console.debug(`${this.#class.name}.onWriteError`, error.cause)
 
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.reading.emit("error", reason)
+    await this.reading.emit("error", error.cause)
   }
 
   async #onRead(chunk: Opaque): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding | CursorWriteLengthOverflowError | ContentLengthOverflowError | EventError>> {

@@ -20,7 +20,7 @@ export default function Home() {
         const msgEvent = event as MessageEvent<ArrayBuffer>
         const bytes = new Uint8Array(msgEvent.data)
         console.log(bytes)
-        ws.close()
+        ws.close(3000, "hello")
       })
 
       const bytes = new Uint8Array([1, 2, 3])

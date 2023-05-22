@@ -1,6 +1,6 @@
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
-import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { Cascade, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { StreamEvents, SuperEventTarget } from "@hazae41/plume";
@@ -201,25 +201,29 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, reason)
+    const error = Cascade.unthrow(reason).get()
+
+    console.debug(`${this.#class.name}.onReadError`, error.cause)
 
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.emit("error", reason)
+    await this.reading.emit("error", error.cause)
 
-    await this.#onError(reason)
+    await this.#onError(error.cause)
   }
 
   async #onWriteError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onWriteError`, reason)
+    const error = Cascade.unthrow(reason).get()
+
+    console.debug(`${this.#class.name}.onWriteError`, error.cause)
 
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.writing.emit("error", reason)
+    await this.writing.emit("error", error.cause)
 
-    await this.#onError(reason)
+    await this.#onError(error.cause)
   }
 
   async #onError(error?: unknown) {
@@ -374,11 +378,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
         const reason = close.reason.mapSync(Bytes.toUtf8)
 
-        this.#reader.tryError(reason.get()).inspectErrSync(console.warn)
-        this.#writer.tryClose().inspectErrSync(console.warn)
+        this.#reader.controller.tryError(reason.get()).inspectErrSync(console.warn)
+        this.#writer.controller.tryClose().inspectErrSync(console.warn)
       } else {
-        this.#reader.tryError().inspectErrSync(console.warn)
-        this.#writer.tryClose().inspectErrSync(console.warn)
+        this.#reader.controller.tryError().inspectErrSync(console.warn)
+        this.#writer.controller.tryClose().inspectErrSync(console.warn)
       }
 
       return Ok.void()
