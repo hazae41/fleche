@@ -183,7 +183,7 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
       return bytes
 
     console.debug("ws ->", bytes.inner)
-    this.websocket.send(bytes.inner)
+    this.websocket.send(bytes.get())
 
     return Ok.void()
   }
