@@ -66,16 +66,17 @@ export class HttpClientDuplex {
       .pipeTo(read.writable, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
+      .catch(console.error)
 
     write.readable
       .pipeTo(subduplex.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
+      .catch(console.error)
 
     read.readable
       .pipeTo(piper.writable)
-      .then(() => { })
-      .catch(() => { })
+      .catch(console.error)
   }
 
   async #onReadClose() {

@@ -93,11 +93,13 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .pipeTo(reader, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
+      .catch(console.error)
 
     writer
       .pipeTo(http.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
+      .catch(console.error)
 
     http.reading.on("head", this.#onHead.bind(this), { passive: true })
 
