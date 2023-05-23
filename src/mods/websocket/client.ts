@@ -214,7 +214,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#onError(reason)
 
-    return new Err(Panic.unthrow(reason))
+    return new Err(Panic.rethrow(reason))
   }
 
   async #onWriteError(reason?: unknown) {
@@ -227,7 +227,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#onError(reason)
 
-    return new Err(Panic.unthrow(reason))
+    return new Err(Panic.rethrow(reason))
   }
 
   async #onError(error?: unknown) {

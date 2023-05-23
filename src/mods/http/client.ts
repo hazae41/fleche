@@ -106,7 +106,7 @@ export class HttpClientDuplex {
 
     await this.reading.emit("error", reason)
 
-    return new Err(Panic.unthrow(reason))
+    return new Err(Panic.rethrow(reason))
   }
 
   async #onWriteError(reason?: unknown) {
@@ -117,7 +117,7 @@ export class HttpClientDuplex {
 
     await this.writing.emit("error", reason)
 
-    return new Err(Panic.unthrow(reason))
+    return new Err(Panic.rethrow(reason))
   }
 
   async #onRead(chunk: Opaque): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding | CursorWriteLengthOverflowError | ContentLengthOverflowError | EventError>> {
