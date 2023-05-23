@@ -15,7 +15,7 @@ namespace Requests {
     /**
      * Firefox fix
      */
-    if (request.body === undefined && init.body !== undefined) {
+    if (request.body == null && init.body != null) {
       if (init.body instanceof ReadableStream) {
         return init.body as ReadableStream<Uint8Array>
       } else {
@@ -37,13 +37,13 @@ export class PipeError extends Error {
     super(undefined, options)
   }
 
-  static wait(http: HttpClientDuplex, body: ReadableStream<Uint8Array> | null) {
+  static wait(http: HttpClientDuplex, body?: ReadableStream<Uint8Array> | null) {
     const controller = new AbortController()
     const future = new Future<Err<PipeError>>()
 
     const { signal } = controller
 
-    if (body !== null)
+    if (body != null)
       body.pipeTo(http.writable, { signal }).catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
     else
       http.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
