@@ -100,25 +100,29 @@ export class HttpClientDuplex {
   }
 
   async #onReadError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, reason)
+    const error = Cascade.filter(reason)
+
+    console.debug(`${this.#class.name}.onReadError`, { error: error.inner })
 
     this.#reader.closed = { reason }
     this.#writer.controller.inner.error(reason)
 
-    await this.reading.emit("error", reason)
+    await this.reading.emit("error", error.inner)
 
-    return new Err(Cascade.rethrow(reason))
+    return Cascade.rethrow(error)
   }
 
   async #onWriteError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, reason)
+    const error = Cascade.filter(reason)
+
+    console.debug(`${this.#class.name}.onReadError`, { error: error.inner })
 
     this.#writer.closed = { reason }
     this.#reader.controller.inner.error(reason)
 
-    await this.writing.emit("error", reason)
+    await this.writing.emit("error", error.inner)
 
-    return new Err(Cascade.rethrow(reason))
+    return Cascade.rethrow(error)
   }
 
   async #onRead(chunk: Opaque): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding | CursorWriteLengthOverflowError | ContentLengthOverflowError | EventError>> {

@@ -27,7 +27,7 @@ export default function Page() {
 
       await ws.send(bytes)
     } catch (e: unknown) {
-      console.error(e)
+      console.error("onClick", e)
     }
   }, [])
 
