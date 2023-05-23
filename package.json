@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@hazae41/fleche",
-  "version": "1.1.20",
+  "version": "1.1.21",
   "description": "Zero-copy HTTP protocol for the web",
   "homepage": "https://github.com/hazae41/fleche",
   "repository": "github:hazae41/fleche",
