@@ -76,7 +76,7 @@ export class HttpClientDuplex {
 
     read.readable
       .pipeTo(piper.writable)
-      .catch(console.error)
+      .catch(() => { })
   }
 
   async #onReadClose() {
