@@ -1,10 +1,10 @@
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
-import { Cascade, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { StreamEvents, SuperEventTarget } from "@hazae41/plume";
-import { Err, Ok, Result } from "@hazae41/result";
+import { Err, Ok, Panic, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientDuplex } from "mods/http/client.js";
@@ -190,6 +190,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#reader.closed = {}
 
     await this.reading.emit("close", undefined)
+
+    return Ok.void()
   }
 
   async #onWriteClose() {
@@ -198,32 +200,34 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#writer.closed = {}
 
     await this.writing.emit("close", undefined)
+
+    return Ok.void()
   }
 
   async #onReadError(reason?: unknown) {
-    const error = Cascade.unthrow(reason).get()
-
-    console.debug(`${this.#class.name}.onReadError`, error.cause)
+    console.debug(`${this.#class.name}.onReadError`, reason)
 
     this.#reader.closed = { reason }
     this.#writer.controller.inner.error(reason)
 
-    await this.reading.emit("error", error.cause)
+    await this.reading.emit("error", reason)
 
-    await this.#onError(error.cause)
+    await this.#onError(reason)
+
+    return new Err(Panic.unthrow(reason))
   }
 
   async #onWriteError(reason?: unknown) {
-    const error = Cascade.unthrow(reason).get()
-
-    console.debug(`${this.#class.name}.onWriteError`, error.cause)
+    console.debug(`${this.#class.name}.onWriteError`, reason)
 
     this.#writer.closed = { reason }
     this.#reader.controller.inner.error(reason)
 
-    await this.writing.emit("error", error.cause)
+    await this.writing.emit("error", reason)
 
-    await this.#onError(error.cause)
+    await this.#onError(reason)
+
+    return new Err(Panic.unthrow(reason))
   }
 
   async #onError(error?: unknown) {
