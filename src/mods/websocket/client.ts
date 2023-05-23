@@ -1,10 +1,10 @@
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
-import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { Cascade, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { StreamEvents, SuperEventTarget } from "@hazae41/plume";
-import { Err, Ok, Panic, Result } from "@hazae41/result";
+import { Err, Ok, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
 import { HttpClientDuplex } from "mods/http/client.js";
@@ -216,7 +216,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#onError(reason)
 
-    return new Err(Panic.rethrow(reason))
+    return new Err(Cascade.rethrow(reason))
   }
 
   async #onWriteError(reason?: unknown) {
@@ -229,7 +229,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#onError(reason)
 
-    return new Err(Panic.rethrow(reason))
+    return new Err(Cascade.rethrow(reason))
   }
 
   async #onError(error?: unknown) {
