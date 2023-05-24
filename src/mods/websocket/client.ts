@@ -302,7 +302,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       const cursor = new Cursor(chunk)
 
       while (cursor.remaining) {
-        const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor)
+        const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor).ignore()
 
         if (frame.isErr()) {
           this.#frame.tryWrite(cursor.after).throw(t)
