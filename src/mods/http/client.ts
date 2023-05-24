@@ -1,6 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { Cascade, CatchedError, SuperTransformStream } from "@hazae41/cascade"
+import { Cascade, SuperTransformStream } from "@hazae41/cascade"
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
@@ -105,8 +105,6 @@ export class HttpClientDuplex {
     const error = Cascade.filter(reason)
 
     console.debug(`${this.#class.name}.onReadError`, { reason })
-    console.debug(`${this.#class.name}.onReadError`, { error })
-    console.log(reason instanceof CatchedError)
 
     this.#reader.closed = { reason }
     this.#writer.error(reason)
