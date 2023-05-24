@@ -1,6 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { Cascade, SuperTransformStream } from "@hazae41/cascade"
+import { Cascade, CatchedError, SuperTransformStream } from "@hazae41/cascade"
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
@@ -104,12 +104,14 @@ export class HttpClientDuplex {
   async #onReadError(reason?: unknown) {
     const error = Cascade.filter(reason)
 
-    console.debug(`${this.#class.name}.onReadError`, { error: error.inner })
+    console.debug(`${this.#class.name}.onReadError`, { reason })
+    console.debug(`${this.#class.name}.onReadError`, { error })
+    console.log(reason instanceof CatchedError)
 
     this.#reader.closed = { reason }
-    this.#writer.controller.inner.error(reason)
+    this.#writer.error(reason)
 
-    await this.reading.emit("error", error.inner)
+    await this.reading.emit("error", reason)
 
     return Cascade.rethrow(error)
   }
@@ -117,12 +119,12 @@ export class HttpClientDuplex {
   async #onWriteError(reason?: unknown) {
     const error = Cascade.filter(reason)
 
-    console.debug(`${this.#class.name}.onReadError`, { error: error.inner })
+    console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#writer.closed = { reason }
-    this.#reader.controller.inner.error(reason)
+    this.#reader.error(reason)
 
-    await this.writing.emit("error", error.inner)
+    await this.writing.emit("error", reason)
 
     return Cascade.rethrow(error)
   }

@@ -214,7 +214,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     console.debug(`${this.#class.name}.onReadError`, { error: error.inner })
 
     this.#reader.closed = { reason }
-    this.#writer.controller.inner.error(reason)
+    this.#writer.error(reason)
 
     await this.reading.emit("error", error.inner)
 
@@ -229,7 +229,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     console.debug(`${this.#class.name}.onWriteError`, { error: error.inner })
 
     this.#writer.closed = { reason }
-    this.#reader.controller.inner.error(reason)
+    this.#reader.error(reason)
 
     await this.writing.emit("error", error.inner)
 
