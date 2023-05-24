@@ -308,7 +308,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
         if (frame.isErr()) {
           this.#frame.tryWrite(cursor.after).throw(t)
-
           break
         }
 
