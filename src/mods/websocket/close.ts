@@ -1,5 +1,6 @@
+import { BinaryReadError, BinaryWriteError } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { Cursor, CursorReadLengthOverflowError, CursorReadUnknownError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor"
+import { Cursor } from "@hazae41/cursor"
 import { Option } from "@hazae41/option"
 import { Ok, Result } from "@hazae41/result"
 
@@ -19,7 +20,7 @@ export class WebSocketClose {
     return new Ok(2 + this.reason.mapOrSync(0, x => x.length))
   }
 
-  tryWrite(cursor: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+  tryWrite(cursor: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
       cursor.tryWriteUint16(this.code).throw(t)
       this.reason.inspectSync(x => cursor.tryWrite(x).throw(t))
@@ -28,7 +29,7 @@ export class WebSocketClose {
     })
   }
 
-  static tryRead(cursor: Cursor): Result<WebSocketClose, CursorReadUnknownError | CursorReadLengthOverflowError> {
+  static tryRead(cursor: Cursor): Result<WebSocketClose, BinaryReadError> {
     return Result.unthrowSync(t => {
       const code = cursor.tryReadUint16().throw(t)
 

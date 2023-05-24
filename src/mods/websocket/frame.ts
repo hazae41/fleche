@@ -1,6 +1,6 @@
-import { CursorReadLengthUnderflowError } from "@hazae41/binary"
+import { BinaryReadError, BinaryWriteError, CursorReadLengthUnderflowError } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { Cursor, CursorReadLengthOverflowError, CursorReadUnknownError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor"
+import { Cursor } from "@hazae41/cursor"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Option } from "@hazae41/option"
 import { Err, Ok, Result } from "@hazae41/result"
@@ -65,7 +65,7 @@ export class WebSocketFrame {
    * Write as bits
    * @param cursor bits
    */
-  tryWrite(cursor: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+  tryWrite(cursor: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
       cursor.tryWriteUint8(Number(this.final)).throw(t)
 
@@ -100,7 +100,7 @@ export class WebSocketFrame {
    * @param cursor bits
    * @returns 
    */
-  static tryRead(cursor: Cursor): Result<WebSocketFrame, CursorReadUnknownError | CursorReadLengthOverflowError | CursorReadLengthUnderflowError | Bytes.CastError<4>> {
+  static tryRead(cursor: Cursor): Result<WebSocketFrame, BinaryReadError | Bytes.CastError<4>> {
     return Result.unthrowSync(t => {
       const final = Boolean(cursor.tryReadUint8().throw(t))
 
