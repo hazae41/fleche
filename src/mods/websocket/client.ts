@@ -93,12 +93,14 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .pipeTo(reader, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
+      .then(r => r.ignore())
       .catch(console.error)
 
     writer
       .pipeTo(http.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
+      .then(r => r.ignore())
       .catch(console.error)
 
     http.reading.on("head", this.#onHead.bind(this), { passive: true })
@@ -298,7 +300,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadDirect(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
-    return await Result.unthrow(async t => {
+    return await Result.unthrow<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>(async t => {
       const cursor = new Cursor(chunk)
 
       while (cursor.remaining) {
@@ -314,7 +316,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       }
 
       return Ok.void()
-    })
+    }).then(r => r.ignore())
   }
 
   async #onFrame(frame: WebSocketFrame) {
@@ -388,11 +390,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
         const reason = close.reason.mapSync(Bytes.toUtf8)
 
-        this.#reader.tryError(reason.get()).inspectErrSync(console.warn)
-        this.#writer.tryClose().inspectErrSync(console.warn)
+        this.#reader.tryError(reason.get()).inspectErrSync(console.warn).ignore()
+        this.#writer.tryClose().inspectErrSync(console.warn).ignore()
       } else {
-        this.#reader.tryError().inspectErrSync(console.warn)
-        this.#writer.tryClose().inspectErrSync(console.warn)
+        this.#reader.tryError().inspectErrSync(console.warn).ignore()
+        this.#writer.tryClose().inspectErrSync(console.warn).ignore()
       }
 
       return Ok.void()

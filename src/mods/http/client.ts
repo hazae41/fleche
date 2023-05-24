@@ -5,7 +5,7 @@ import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
 import { EventError, StreamEvents, SuperEventTarget } from "@hazae41/plume"
-import { Debug, Err, Ok, Panic, Result } from "@hazae41/result"
+import { Err, Ok, Panic, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { ContentLengthOverflowError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
@@ -44,8 +44,6 @@ export class HttpClientDuplex {
     readonly params: HttpStreamParams
   ) {
     const { signal } = params
-
-    Debug.debug = true
 
     this.#reader = new SuperTransformStream({
       transform: this.#onRead.bind(this)
