@@ -300,7 +300,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadDirect(chunk: Uint8Array): Promise<Result<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>> {
-    return await Result.unthrow<void, UnexpectedContinuationFrameError | ExpectedContinuationFrameError | BinaryError>(async t => {
+    return await Result.unthrow(async t => {
       const cursor = new Cursor(chunk)
 
       while (cursor.remaining) {
@@ -316,7 +316,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       }
 
       return Ok.void()
-    }).then(r => r.ignore())
+    })
   }
 
   async #onFrame(frame: WebSocketFrame) {
