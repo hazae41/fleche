@@ -5,7 +5,7 @@ import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
 import { EventError, StreamEvents, SuperEventTarget } from "@hazae41/plume"
-import { Err, Ok, Panic, Result } from "@hazae41/result"
+import { Debug, Err, Ok, Panic, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { ContentLengthOverflowError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
@@ -45,6 +45,8 @@ export class HttpClientDuplex {
   ) {
     const { signal } = params
 
+    Debug.debug = true
+
     this.#reader = new SuperTransformStream({
       transform: this.#onRead.bind(this)
     })
@@ -66,12 +68,14 @@ export class HttpClientDuplex {
       .pipeTo(read.writable, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
+      .then(r => r.ignore())
       .catch(console.error)
 
     write.readable
       .pipeTo(subduplex.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
+      .then(r => r.ignore())
       .catch(console.error)
 
     read.readable
