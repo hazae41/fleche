@@ -1,5 +1,5 @@
 import { BinaryReadError, BinaryWriteError, CursorReadLengthUnderflowError } from "@hazae41/binary"
-import { Bytes } from "@hazae41/bytes"
+import { Bytes, BytesCastError } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Option } from "@hazae41/option"
@@ -100,7 +100,7 @@ export class WebSocketFrame {
    * @param cursor bits
    * @returns 
    */
-  static tryRead(cursor: Cursor): Result<WebSocketFrame, BinaryReadError | Bytes.CastError<4>> {
+  static tryRead(cursor: Cursor): Result<WebSocketFrame, BinaryReadError | BytesCastError> {
     return Result.unthrowSync(t => {
       const final = Boolean(cursor.tryReadUint8().throw(t))
 

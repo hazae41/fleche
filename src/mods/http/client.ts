@@ -102,8 +102,6 @@ export class HttpClientDuplex {
   }
 
   async #onReadError(reason?: unknown) {
-    const error = Cascade.filter(reason)
-
     console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
@@ -111,12 +109,10 @@ export class HttpClientDuplex {
 
     await this.reading.emit("error", reason)
 
-    return Cascade.rethrow(error)
+    return Cascade.rethrow(reason)
   }
 
   async #onWriteError(reason?: unknown) {
-    const error = Cascade.filter(reason)
-
     console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#writer.closed = { reason }
@@ -124,7 +120,7 @@ export class HttpClientDuplex {
 
     await this.writing.emit("error", reason)
 
-    return Cascade.rethrow(error)
+    return Cascade.rethrow(reason)
   }
 
   async #onRead(chunk: Opaque): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding | CursorWriteLengthOverflowError | ContentLengthOverflowError | InvalidStateError | EventError>> {

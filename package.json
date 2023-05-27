@@ -23,15 +23,15 @@
   },
   "dependencies": {
     "@hazae41/binary": "^1.2.31",
-    "@hazae41/bytes": "^1.1.12",
-    "@hazae41/cascade": "^1.1.19",
+    "@hazae41/bytes": "^1.1.14",
+    "@hazae41/cascade": "^1.1.20",
     "@hazae41/cursor": "^1.1.14",
     "@hazae41/foras": "^2.0.8",
     "@hazae41/future": "^1.0.3",
     "@hazae41/naberius": "^1.0.6",
     "@hazae41/option": "^1.0.9",
     "@hazae41/plume": "^2.0.4",
-    "@hazae41/result": "^1.0.33"
+    "@hazae41/result": "^1.0.34"
   },
   "devDependencies": {
     "@hazae41/phobos": "^1.0.10",

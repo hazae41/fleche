@@ -209,33 +209,29 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadError(reason?: unknown) {
-    const error = Cascade.filter(reason)
-
-    console.debug(`${this.#class.name}.onReadError`, { error: error.inner })
+    console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.emit("error", error.inner)
+    await this.reading.emit("error", reason)
 
-    await this.#onError(error.inner)
+    await this.#onError(reason)
 
-    return Cascade.rethrow(error)
+    return Cascade.rethrow(reason)
   }
 
   async #onWriteError(reason?: unknown) {
-    const error = Cascade.filter(reason)
-
-    console.debug(`${this.#class.name}.onWriteError`, { error: error.inner })
+    console.debug(`${this.#class.name}.onWriteError`, { reason })
 
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.writing.emit("error", error.inner)
+    await this.writing.emit("error", reason)
 
     await this.#onError(reason)
 
-    return Cascade.rethrow(error)
+    return Cascade.rethrow(reason)
   }
 
   async #onError(error?: unknown) {
