@@ -21,7 +21,7 @@ export interface WebSocketClientDuplexParams {
 
 export class WebSocketMessageState {
 
-  readonly buffer = Cursor.allocUnsafe(16 * 1024 * 1024)
+  readonly buffer = Cursor.allocUnsafe(64 * 1024)
 
   opcode?: number
 
@@ -36,7 +36,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
 
-  readonly #frame = Cursor.allocUnsafe(16 * 1024 * 1024 * 8)
+  readonly #frame = Cursor.allocUnsafe(64 * 1024 * 8)
 
   readonly #current = new WebSocketMessageState()
 
