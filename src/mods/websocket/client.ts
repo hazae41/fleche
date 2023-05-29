@@ -1,6 +1,6 @@
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
-import { Cascade, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { StreamEvents, SuperEventTarget } from "@hazae41/plume";
@@ -218,7 +218,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#onError(reason)
 
-    return Cascade.rethrow(reason)
+    return Result.rethrow(reason)
   }
 
   async #onWriteError(reason?: unknown) {
@@ -231,7 +231,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#onError(reason)
 
-    return Cascade.rethrow(reason)
+    return Result.rethrow(reason)
   }
 
   async #onError(error?: unknown) {
