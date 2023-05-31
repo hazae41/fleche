@@ -20,6 +20,10 @@ export class InvalidHttpHeaderValue extends Error {
 
 }
 
+export type FrameError =
+  | UnexpectedContinuationFrameError
+  | ExpectedContinuationFrameError
+
 export class UnexpectedContinuationFrameError extends Error {
   readonly #class = UnexpectedContinuationFrameError
 
