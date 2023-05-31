@@ -1,5 +1,11 @@
-export class InvalidStateError extends Error {
-  readonly #class = InvalidStateError
+export type HttpError =
+  | InvalidHttpStateError
+  | UnsupportedContentEncoding
+  | UnsupportedTransferEncoding
+  | ContentLengthOverflowError
+
+export class InvalidHttpStateError extends Error {
+  readonly #class = InvalidHttpStateError
   readonly name = this.#class.name
 
   constructor() {

@@ -1,13 +1,13 @@
-import { Opaque, Writable } from "@hazae41/binary"
-import { Bytes } from "@hazae41/bytes"
+import { BinaryWriteError, Opaque, Writable } from "@hazae41/binary"
+import { Bytes, BytesError } from "@hazae41/bytes"
 import { SuperTransformStream } from "@hazae41/cascade"
-import { Cursor, CursorWriteLengthOverflowError } from "@hazae41/cursor"
+import { Cursor } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
 import { EventError, StreamEvents, SuperEventTarget } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
-import { ContentLengthOverflowError, InvalidStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
+import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
 export interface HttpStreamParams {
@@ -123,7 +123,7 @@ export class HttpClientDuplex {
     return Result.rethrow(reason)
   }
 
-  async #onRead(chunk: Opaque): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding | CursorWriteLengthOverflowError | ContentLengthOverflowError | InvalidStateError | EventError>> {
+  async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
     return await Result.unthrow(async t => {
       // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
 
@@ -152,7 +152,7 @@ export class HttpClientDuplex {
           return await this.#onReadChunkedBody(bytes, this.#state)
       }
 
-      return new Err(new InvalidStateError())
+      return new Err(new InvalidHttpStateError())
     })
   }
 
@@ -207,8 +207,8 @@ export class HttpClientDuplex {
     return new Err(new UnsupportedContentEncoding(type))
   }
 
-  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, CursorWriteLengthOverflowError | UnsupportedTransferEncoding | UnsupportedContentEncoding | EventError>> {
-    return await Result.unthrow<Option<Bytes>, CursorWriteLengthOverflowError | UnsupportedTransferEncoding | UnsupportedContentEncoding | EventError>(async t => {
+  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState) {
+    return await Result.unthrow<Option<Bytes>, HttpError | EventError | BinaryWriteError>(async t => {
       const { buffer } = state
 
       buffer.tryWrite(chunk).throw(t)
@@ -241,9 +241,9 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, InvalidStateError>> {
+  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError>> {
     if (state.server_transfer.type !== "none")
-      return new Err(new InvalidStateError())
+      return new Err(new InvalidHttpStateError())
 
     const { server_compression } = state
 
@@ -260,9 +260,9 @@ export class HttpClientDuplex {
     return Ok.void()
   }
 
-  async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, InvalidStateError | ContentLengthOverflowError>> {
+  async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError>> {
     if (state.server_transfer.type !== "lengthed")
-      return new Err(new InvalidStateError())
+      return new Err(new InvalidHttpStateError())
 
     const { server_transfer, server_compression } = state
 
@@ -294,10 +294,10 @@ export class HttpClientDuplex {
     return Ok.void()
   }
 
-  async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, InvalidStateError | CursorWriteLengthOverflowError>> {
+  async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError | BinaryWriteError>> {
     return await Result.unthrow(async t => {
       if (state.server_transfer.type !== "chunked")
-        return new Err(new InvalidStateError())
+        return new Err(new InvalidHttpStateError())
 
       const { server_transfer, server_compression } = state
       const { buffer } = server_transfer
@@ -355,7 +355,7 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onWriteStart(): Promise<Result<void, UnsupportedTransferEncoding | UnsupportedContentEncoding>> {
+  async #onWriteStart(): Promise<Result<void, HttpError | BytesError>> {
     return await Result.unthrow(async t => {
       const { method, pathname, headers } = this.params
 
@@ -366,7 +366,7 @@ export class HttpClientDuplex {
       // console.debug(this.#class.name, "->", head.length, head)
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
-      const buffer = Cursor.allocUnsafe(64 * 1024)
+      const buffer = Cursor.tryAllocUnsafe(64 * 1024).throw(t)
 
       if (Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade")) {
         this.#state = { type: "upgrading", buffer }
@@ -380,7 +380,7 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onWrite(chunk: Uint8Array): Promise<Result<void, InvalidStateError>> {
+  async #onWrite(chunk: Uint8Array): Promise<Result<void, HttpError>> {
     // console.debug(this.#class.name, "->", chunk)
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded") {
@@ -395,7 +395,7 @@ export class HttpClientDuplex {
         return await this.#onWriteChunked(chunk)
     }
 
-    return new Err(new InvalidStateError())
+    return new Err(new InvalidHttpStateError())
   }
 
   async #onWriteNone(chunk: Uint8Array): Promise<Result<void, never>> {
