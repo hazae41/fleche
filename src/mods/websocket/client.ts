@@ -152,7 +152,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
-    this.trySend(data).then(r => r.unwrap()).catch(console.error)
+    this.trySend(data).then(r => r.inspectErrSync(e => console.debug(`${this.#class.name}.send`, { e })).ignore())
   }
 
   async trySend(data: string | ArrayBufferLike | ArrayBufferView | Blob): Promise<Result<void, BinaryError>> {
@@ -167,7 +167,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   close(code = 1000, reason?: string): void {
-    this.tryClose(code, reason).unwrap()
+    this.tryClose(code, reason).inspectErrSync(e => console.debug(`${this.#class.name}.close`, { e })).ignore()
   }
 
   tryClose(code = 1000, reason?: string): Result<void, BinaryWriteError> {
