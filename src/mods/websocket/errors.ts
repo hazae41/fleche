@@ -1,3 +1,7 @@
+export type WebSocketHttpError =
+  | InvalidHttpHeaderValue
+  | InvalidHttpStatusCode
+
 export class InvalidHttpStatusCode extends Error {
   readonly #class = InvalidHttpStatusCode
 
@@ -20,7 +24,7 @@ export class InvalidHttpHeaderValue extends Error {
 
 }
 
-export type FrameError =
+export type WebSocketFrameError =
   | UnexpectedContinuationFrameError
   | ExpectedContinuationFrameError
 
@@ -35,6 +39,7 @@ export class UnexpectedContinuationFrameError extends Error {
 
 export class ExpectedContinuationFrameError extends Error {
   readonly #class = ExpectedContinuationFrameError
+  readonly name = this.#class.name
 
   constructor() {
     super(`Expected a continuation frame`)

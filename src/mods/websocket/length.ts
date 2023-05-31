@@ -1,4 +1,5 @@
-import { Cursor, CursorReadLengthOverflowError, CursorWriteLengthOverflowError, CursorWriteUnknownError } from "@hazae41/cursor"
+import { BinaryReadError, BinaryWriteError } from "@hazae41/binary"
+import { Cursor } from "@hazae41/cursor"
 import { unpack } from "@hazae41/naberius"
 import { Ok, Result } from "@hazae41/result"
 
@@ -16,9 +17,9 @@ export class Length {
     return new Ok(7 + 64)
   }
 
-  #tryWrite7(binary: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+  #tryWrite7(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
-      const lengthBytes = Cursor.allocUnsafe(1)
+      const lengthBytes = Cursor.tryAllocUnsafe(1).throw(t)
       lengthBytes.tryWriteUint8(this.value).throw(t)
 
       const lengthBits = unpack(lengthBytes.bytes)
@@ -28,9 +29,9 @@ export class Length {
     })
   }
 
-  #tryWrite16(binary: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+  #tryWrite16(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
-      const lengthBytes = Cursor.allocUnsafe(1 + 2)
+      const lengthBytes = Cursor.tryAllocUnsafe(1 + 2).throw(t)
       lengthBytes.tryWriteUint8(126).throw(t)
       lengthBytes.tryWriteUint16(this.value).throw(t)
 
@@ -41,9 +42,9 @@ export class Length {
     })
   }
 
-  #tryWrite64(binary: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+  #tryWrite64(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
-      const lengthBytes = Cursor.allocUnsafe(1 + 8)
+      const lengthBytes = Cursor.tryAllocUnsafe(1 + 8).throw(t)
       lengthBytes.tryWriteUint8(127).throw(t)
       lengthBytes.tryWriteUint64(BigInt(this.value)).throw(t)
 
@@ -54,7 +55,7 @@ export class Length {
     })
   }
 
-  tryWrite(binary: Cursor): Result<void, CursorWriteUnknownError | CursorWriteLengthOverflowError> {
+  tryWrite(binary: Cursor): Result<void, BinaryWriteError> {
     if (this.value < 126)
       return this.#tryWrite7(binary)
     if (this.value < 65_535)
@@ -62,7 +63,7 @@ export class Length {
     return this.#tryWrite64(binary)
   }
 
-  static tryRead(binary: Cursor): Result<Length, CursorReadLengthOverflowError> {
+  static tryRead(binary: Cursor): Result<Length, BinaryReadError> {
     return Result.unthrowSync(t => {
       const header = binary.tryRead(7).throw(t).reduce((p, n) => (p << 1) | n)
 
