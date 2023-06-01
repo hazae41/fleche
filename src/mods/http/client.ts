@@ -207,8 +207,8 @@ export class HttpClientDuplex {
     return new Err(new UnsupportedContentEncoding(type))
   }
 
-  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState) {
-    return await Result.unthrow<Option<Bytes>, HttpError | EventError | BinaryWriteError>(async t => {
+  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, HttpError | EventError | BinaryWriteError>> {
+    return await Result.unthrow(async t => {
       const { buffer } = state
 
       buffer.tryWrite(chunk).throw(t)
