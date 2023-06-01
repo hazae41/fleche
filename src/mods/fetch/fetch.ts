@@ -1,7 +1,8 @@
 import { Opaque, Writable } from "@hazae41/binary"
+import { Cleaner } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
 import { Some } from "@hazae41/option"
-import { AbortError, Cleanable, CloseError, ErrorError } from "@hazae41/plume"
+import { AbortError, CloseError, ErrorError } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
 
@@ -48,7 +49,7 @@ export class PipeError extends Error {
     else
       http.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
 
-    return new Cleanable(future.promise, () => controller.abort())
+    return new Cleaner(future.promise, () => controller.abort())
   }
 
 }
@@ -100,5 +101,5 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
     return new Ok(new Some(new Ok(response)))
   })
 
-  return await Cleanable.race<Result<Response, AbortError | ErrorError | CloseError | PipeError>>([abort, error, close, pipe, head])
+  return await Cleaner.race<Result<Response, AbortError | ErrorError | CloseError | PipeError>>([abort, error, close, pipe, head])
 }
