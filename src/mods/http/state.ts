@@ -1,5 +1,4 @@
 import { Cursor } from "@hazae41/cursor"
-import { GzDecoder, GzEncoder } from "@hazae41/foras"
 
 export type HttpState =
   | HttpNoneState
@@ -67,7 +66,7 @@ export type HttpClientCompression =
 
 export interface HttpGzipClientCompression {
   readonly type: "gzip"
-  readonly encoder: GzEncoder
+  readonly encoder: CompressionStream
 }
 
 export type HttpServerCompression =
@@ -76,5 +75,5 @@ export type HttpServerCompression =
 
 export interface HttpGzipServerCompression {
   readonly type: "gzip"
-  readonly decoder: GzDecoder
+  readonly decoder: DecompressionStream
 }

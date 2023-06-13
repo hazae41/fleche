@@ -1,8 +1,8 @@
 import { BinaryWriteError, Opaque, Writable } from "@hazae41/binary"
 import { Bytes, BytesError } from "@hazae41/bytes"
-import { SuperTransformStream } from "@hazae41/cascade"
+import { SuperTransformStream, WriteError, runWithWriter, tryWrite } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
-import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
+import { Foras } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
 import { EventError, StreamEvents, SuperEventTarget } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
@@ -123,7 +123,7 @@ export class HttpClientDuplex {
     return Result.rethrow(reason)
   }
 
-  async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
+  async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError | WriteError>> {
     return await Result.unthrow(async t => {
       // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
 
@@ -185,7 +185,12 @@ export class HttpClientDuplex {
 
     if (type === "gzip") {
       await Foras.initBundledOnce()
-      const encoder = new GzEncoder()
+      const encoder = new CompressionStream("gzip")
+
+      encoder.readable
+        .pipeTo(this.writable)
+        .catch(() => { })
+
       return new Ok({ type, encoder })
     }
 
@@ -200,7 +205,9 @@ export class HttpClientDuplex {
 
     if (type === "gzip") {
       await Foras.initBundledOnce()
-      const decoder = new GzDecoder()
+      const decoder = new DecompressionStream("gzip")
+
+
       return new Ok({ type, decoder })
     }
 
@@ -241,23 +248,26 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError>> {
-    if (state.server_transfer.type !== "none")
-      return new Err(new InvalidHttpStateError())
+  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError | WriteError>> {
+    return await Result.unthrow(async t => {
+      if (state.server_transfer.type !== "none")
+        return new Err(new InvalidHttpStateError())
 
-    const { server_compression } = state
+      const { server_compression } = state
 
-    if (server_compression.type === "gzip") {
-      server_compression.decoder.write(chunk)
-      server_compression.decoder.flush()
+      if (server_compression.type === "gzip") {
+        await runWithWriter(server_compression.decoder.writable, writer => {
+          return tryWrite(writer, chunk)
+        }).then(r => r.throw(t))
 
-      const dchunk = server_compression.decoder.read()
-      this.#reader.enqueue(dchunk)
-    } else {
-      this.#reader.enqueue(chunk)
-    }
+        const dchunk = server_compression.decoder.read()
+        this.#reader.enqueue(dchunk)
+      } else {
+        this.#reader.enqueue(chunk)
+      }
 
-    return Ok.void()
+      return Ok.void()
+    })
   }
 
   async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError>> {
