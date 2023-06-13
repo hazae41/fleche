@@ -13,7 +13,7 @@ export class WebSocketClose {
   ) { }
 
   static tryNew(code: number, reason?: string): Result<WebSocketClose, never> {
-    return new Ok(new WebSocketClose(code, Option.from(reason).mapSync(Bytes.fromUtf8)))
+    return new Ok(new WebSocketClose(code, Option.wrap(reason).mapSync(Bytes.fromUtf8)))
   }
 
   trySize(): Result<number, never> {

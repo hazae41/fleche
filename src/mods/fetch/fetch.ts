@@ -2,7 +2,7 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { Cleaner } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
 import { Some } from "@hazae41/option"
-import { AbortError, CloseError, ErrorError } from "@hazae41/plume"
+import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
 
@@ -72,7 +72,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
  * @param init.stream Transport substream
  * @returns 
  */
-export async function tryFetch(input: RequestInfo | URL, init: RequestInit & FetchParams): Promise<Result<Response, AbortError | ErrorError | CloseError | PipeError>> {
+export async function tryFetch(input: RequestInfo | URL, init: RequestInit & FetchParams): Promise<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>> {
   const { stream, ...initRest } = init
 
   const request = new Request(input, initRest)
@@ -91,9 +91,9 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
 
   const http = new HttpClientDuplex(stream, { pathname, method, headers, signal })
 
-  const abort = AbortError.wait(signal)
-  const error = ErrorError.wait(http.reading)
-  const close = CloseError.wait(http.reading)
+  const abort = AbortedError.wait(signal)
+  const error = ErroredError.wait(http.reading)
+  const close = ClosedError.wait(http.reading)
   const pipe = PipeError.wait(http, body)
 
   const head = http.reading.wait("head", init => {
@@ -101,5 +101,5 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
     return new Ok(new Some(new Ok(response)))
   })
 
-  return await Cleaner.race<Result<Response, AbortError | ErrorError | CloseError | PipeError>>([abort, error, close, pipe, head])
+  return await Cleaner.race<Promise<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>>>([abort, error, close, pipe, head])
 }

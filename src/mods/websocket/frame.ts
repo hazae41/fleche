@@ -41,9 +41,7 @@ export class WebSocketFrame {
   }): Result<WebSocketFrame, never> {
     const { final, opcode, payload } = params
 
-    const mask = Option.from(params.mask)
-
-    return new Ok(new WebSocketFrame(final, opcode, payload, mask))
+    return new Ok(new WebSocketFrame(final, opcode, payload, Option.wrap(params.mask)))
   }
 
   /**
@@ -113,7 +111,7 @@ export class WebSocketFrame {
       const length = Length.tryRead(cursor).throw(t)
 
       if (cursor.remaining < length.value)
-        return new Err(new CursorReadLengthUnderflowError(cursor))
+        return new Err(CursorReadLengthUnderflowError.from(cursor))
 
       if (masked) {
         const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t))
