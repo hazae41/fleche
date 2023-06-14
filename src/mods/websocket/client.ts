@@ -36,7 +36,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
 
-  readonly #frame = Cursor.tryAllocUnsafe(64 * 1024 * 8).unwrap()
+  readonly #frame = Cursor.tryAllocUnsafe(128 * 1024 * 8).unwrap()
 
   readonly #current = new WebSocketMessageState()
 
