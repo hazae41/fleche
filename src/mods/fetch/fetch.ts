@@ -1,7 +1,7 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Cleaner } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
-import { Some } from "@hazae41/option"
+import { None } from "@hazae41/option"
 import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
@@ -96,7 +96,10 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const close = ClosedError.wait(http.reading)
   const pipe = PipeError.wait(http, body)
 
-  const head = http.reading.wait("head", init => new Some(new Ok(new Response(http.readable, init))))
+  const head = http.reading.wait("head", (future: Future<Ok<Response>>, init) => {
+    future.resolve(new Ok(new Response(http.readable, init)))
+    return new None()
+  })
 
   return await Cleaner.race<Promise<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>>>([abort, error, close, pipe, head])
 }
