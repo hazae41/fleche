@@ -3,7 +3,8 @@ import { Bytes } from "@hazae41/bytes";
 import { ControllerError, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
-import { StreamEvents, SuperEventTarget } from "@hazae41/plume";
+import { Some } from "@hazae41/option";
+import { CloseEvents, ErrorEvents, SuperEventTarget } from "@hazae41/plume";
 import { Err, Ok, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
@@ -30,8 +31,8 @@ export class WebSocketMessageState {
 export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #class = WebSocketClientDuplex
 
-  readonly reading = new SuperEventTarget<StreamEvents>()
-  readonly writing = new SuperEventTarget<StreamEvents>()
+  readonly reading = new SuperEventTarget<CloseEvents & ErrorEvents>()
+  readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
 
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
@@ -197,7 +198,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#reader.closed = {}
 
-    await this.reading.emit("close", undefined)
+    await this.reading.emit("close", [undefined])
 
     return Ok.void()
   }
@@ -207,7 +208,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#writer.closed = {}
 
-    await this.writing.emit("close", undefined)
+    await this.writing.emit("close", [undefined])
 
     return Ok.void()
   }
@@ -218,7 +219,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.emit("error", reason)
+    await this.reading.emit("error", [reason])
 
     await this.#onError(reason)
 
@@ -231,7 +232,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.writing.emit("error", reason)
+    await this.writing.emit("error", [reason])
 
     await this.#onError(reason)
 
@@ -246,29 +247,29 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.dispatchEvent(closeEvent)
   }
 
-  async #onHead(init: ResponseInit): Promise<Result<void, WebSocketHttpError>> {
+  async #onHead(init: ResponseInit): Promise<Some<Result<void, WebSocketHttpError>>> {
     const headers = new Headers(init.headers)
 
     if (init.status !== 101)
-      return new Err(new InvalidHttpStatusCode(init.status))
+      return new Some(new Err(new InvalidHttpStatusCode(init.status)))
 
     if (!Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade"))
-      return new Err(new InvalidHttpHeaderValue("Connection"))
+      return new Some(new Err(new InvalidHttpHeaderValue("Connection")))
     if (!Strings.equalsIgnoreCase(headers.get("Upgrade"), "websocket"))
-      return new Err(new InvalidHttpHeaderValue("Upgrade"))
+      return new Some(new Err(new InvalidHttpHeaderValue("Upgrade")))
 
     const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
     if (headers.get("Sec-WebSocket-Accept") !== Bytes.toBase64(hash))
-      return new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept"))
+      return new Some(new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept")))
 
     this.#readyState = this.OPEN
 
     const openEvent = new Event("open")
     this.dispatchEvent(openEvent)
 
-    return Ok.void()
+    return new Some(Ok.void())
   }
 
   async #onReadStart(): Promise<Result<void, never>> {

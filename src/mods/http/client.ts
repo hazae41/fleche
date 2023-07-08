@@ -4,7 +4,7 @@ import { SuperTransformStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
-import { EventError, StreamEvents, SuperEventTarget } from "@hazae41/plume"
+import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
@@ -17,15 +17,15 @@ export interface HttpStreamParams {
   readonly signal?: AbortSignal
 }
 
-export type HttpClientStreamEvent = StreamEvents & {
-  head: ResponseInit
+export type HttpClientStreamEvent = CloseEvents & ErrorEvents & {
+  head: (res: ResponseInit) => Result<void, Error>
 }
 
 export class HttpClientDuplex {
   readonly #class = HttpClientDuplex
 
   readonly reading = new SuperEventTarget<HttpClientStreamEvent>()
-  readonly writing = new SuperEventTarget<StreamEvents>()
+  readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
 
   readonly readable: ReadableStream<Uint8Array>
   readonly writable: WritableStream<Uint8Array>
@@ -86,7 +86,7 @@ export class HttpClientDuplex {
 
     this.#reader.closed = {}
 
-    await this.reading.emit("close", undefined)
+    await this.reading.emit("close", [undefined])
 
     return Ok.void()
   }
@@ -96,7 +96,7 @@ export class HttpClientDuplex {
 
     this.#writer.closed = {}
 
-    await this.writing.emit("close", undefined)
+    await this.writing.emit("close", [undefined])
 
     return Ok.void()
   }
@@ -107,7 +107,7 @@ export class HttpClientDuplex {
     this.#reader.closed = { reason }
     this.#writer.error(reason)
 
-    await this.reading.emit("error", reason)
+    await this.reading.emit("error", [reason])
 
     return Result.rethrow(reason)
   }
@@ -118,7 +118,7 @@ export class HttpClientDuplex {
     this.#writer.closed = { reason }
     this.#reader.error(reason)
 
-    await this.writing.emit("error", reason)
+    await this.writing.emit("error", [reason])
 
     return Result.rethrow(reason)
   }
@@ -207,7 +207,7 @@ export class HttpClientDuplex {
     return new Err(new UnsupportedContentEncoding(type))
   }
 
-  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, HttpError | EventError | BinaryWriteError>> {
+  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, HttpError | BinaryWriteError | EventError>> {
     return await Result.unthrow(async t => {
       const { buffer } = state
 
@@ -235,7 +235,10 @@ export class HttpClientDuplex {
         this.#state = { ...state, type: "headed", server_transfer, server_compression }
       }
 
-      await this.reading.tryEmit("head", { headers, status, statusText }).then(r => r.throw(t))
+      const returned = await this.reading.emit("head", [{ headers, status, statusText }])
+
+      if (returned.isSome() && returned.inner.isErr())
+        return returned.inner.mapErrSync(EventError.new)
 
       return new Ok(new Some(rawBody))
     })

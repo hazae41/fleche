@@ -96,10 +96,7 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const close = ClosedError.wait(http.reading)
   const pipe = PipeError.wait(http, body)
 
-  const head = http.reading.wait("head", init => {
-    const response = new Response(http.readable, init)
-    return new Ok(new Some(new Ok(response)))
-  })
+  const head = http.reading.wait("head", init => new Some(new Ok(new Response(http.readable, init))))
 
   return await Cleaner.race<Promise<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>>>([abort, error, close, pipe, head])
 }
