@@ -394,6 +394,8 @@ export class HttpClientDuplex {
     if (this.#state.type === "heading" || this.#state.type === "headed") {
       if (this.#state.client_transfer.type === "none")
         return await this.#onWriteNone(chunk)
+      if (this.#state.client_transfer.type === "lengthed")
+        return await this.#onWriteLengthed(chunk, this.#state)
       if (this.#state.client_transfer.type === "chunked")
         return await this.#onWriteChunked(chunk)
     }
@@ -403,6 +405,21 @@ export class HttpClientDuplex {
 
   async #onWriteNone(chunk: Uint8Array): Promise<Result<void, never>> {
     this.#writer.enqueue(new Opaque(chunk))
+
+    return Ok.void()
+  }
+
+  async #onWriteLengthed(chunk: Uint8Array, state: HttpHeadingState | HttpHeadedState) {
+    if (state.client_transfer.type !== "lengthed")
+      return new Err(new InvalidHttpStateError())
+
+    const { client_transfer } = state
+
+    if (client_transfer.offset + chunk.length > client_transfer.length)
+      return new Err(new ContentLengthOverflowError(client_transfer.offset, client_transfer.length))
+
+    this.#writer.enqueue(new Opaque(chunk))
+    client_transfer.offset += chunk.length
 
     return Ok.void()
   }
