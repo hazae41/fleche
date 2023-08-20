@@ -79,7 +79,9 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const body = await Requests.getBody(request, initRest)
 
   const { url, method, signal } = request
-  const { host, pathname } = new URL(url)
+  const { host, pathname, search } = new URL(url)
+
+  const target = pathname + search
   const headers = new Headers(init.headers)
 
   if (!headers.has("Host"))
@@ -89,7 +91,7 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   if (!headers.has("Accept-Encoding"))
     headers.set("Accept-Encoding", "gzip")
 
-  const http = new HttpClientDuplex(stream, { pathname, method, headers, signal })
+  const http = new HttpClientDuplex(stream, { method, target, headers, signal })
 
   const abort = AbortedError.wait(signal)
   const error = ErroredError.wait(http.reading)

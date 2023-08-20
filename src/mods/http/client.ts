@@ -11,8 +11,8 @@ import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, Unsupport
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
 export interface HttpStreamParams {
-  readonly pathname: string,
   readonly method: string,
+  readonly target: string,
   readonly headers: Headers,
   readonly signal?: AbortSignal
 }
@@ -125,7 +125,7 @@ export class HttpClientDuplex {
 
   async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
     return await Result.unthrow(async t => {
-      // console.debug(this.#class.name, "<-", chunk.length, Bytes.toUtf8(chunk))
+      console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
 
       let bytes = chunk.bytes
 
@@ -360,13 +360,13 @@ export class HttpClientDuplex {
 
   async #onWriteStart(): Promise<Result<void, HttpError | BytesError>> {
     return await Result.unthrow(async t => {
-      const { method, pathname, headers } = this.params
+      const { method, target, headers } = this.params
 
-      let head = `${method} ${pathname} HTTP/1.1\r\n`
+      let head = `${method} ${target} HTTP/1.1\r\n`
       headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
       head += `\r\n`
 
-      // console.debug(this.#class.name, "->", head.length, head)
+      console.debug(this.#class.name, "->", head.length, head)
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
       const buffer = Cursor.tryAllocUnsafe(64 * 1024).throw(t)
@@ -384,7 +384,7 @@ export class HttpClientDuplex {
   }
 
   async #onWrite(chunk: Uint8Array): Promise<Result<void, HttpError>> {
-    // console.debug(this.#class.name, "->", chunk)
+    // console.debug(this.#class.name, "->", Bytes.toUtf8(chunk))
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded") {
       this.#writer.enqueue(new Opaque(chunk))

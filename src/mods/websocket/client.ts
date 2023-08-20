@@ -63,11 +63,12 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   ) {
     super()
 
-    const { host, pathname, href } = new URL(url)
+    const { host, pathname, search, href } = new URL(url)
     const { subduplex: stream, signal } = params
 
     this.url = href
 
+    const target = pathname + search
     const headers = new Headers()
 
     if (!headers.has("Host"))
@@ -78,7 +79,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     headers.set("Sec-WebSocket-Key", this.#key)
     headers.set("Sec-WebSocket-Version", "13")
 
-    const http = new HttpClientDuplex(stream, { pathname, method: "GET", headers })
+    const http = new HttpClientDuplex(stream, { target, method: "GET", headers })
 
     this.#reader = new SuperWritableStream({
       start: this.#onReadStart.bind(this),
@@ -248,6 +249,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onHead(init: ResponseInit): Promise<Some<Result<void, WebSocketHttpError>>> {
+    console.log(init)
+
     const headers = new Headers(init.headers)
 
     if (init.status !== 101)
@@ -273,7 +276,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadStart(): Promise<Result<void, never>> {
-    await Naberius.initBundledOnce()
+    Naberius.initSyncBundledOnce()
 
     return Ok.void()
   }
