@@ -125,7 +125,7 @@ export class HttpClientDuplex {
 
   async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
     return await Result.unthrow(async t => {
-      console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
+      // console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
 
       let bytes = chunk.bytes
 
@@ -366,7 +366,7 @@ export class HttpClientDuplex {
       headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
       head += `\r\n`
 
-      console.debug(this.#class.name, "->", head.length, head)
+      // console.debug(this.#class.name, "->", head.length, head)
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
       const buffer = Cursor.tryAllocUnsafe(64 * 1024).throw(t)

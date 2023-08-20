@@ -249,8 +249,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onHead(init: ResponseInit): Promise<Some<Result<void, WebSocketHttpError>>> {
-    console.log(init)
-
     const headers = new Headers(init.headers)
 
     if (init.status !== 101)
@@ -322,7 +320,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onFrame(frame: WebSocketFrame) {
-    // console.log("<-", frame)
+    // console.debug("<-", frame)
 
     if (frame.final)
       return await this.#onFinalFrame(frame)
