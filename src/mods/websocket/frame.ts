@@ -33,6 +33,8 @@ export class WebSocketFrame {
     this.length = new Length(this.payload.length)
   }
 
+  [Symbol.dispose]() { }
+
   static tryNew(params: {
     final: boolean,
     opcode: number,
@@ -71,11 +73,11 @@ export class WebSocketFrame {
       cursor.tryWriteUint8(0).throw(t)
       cursor.tryWriteUint8(0).throw(t)
 
-      const opcodeBytes = Cursor.allocUnsafe(1)
+      const opcodeBytes = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
       opcodeBytes.tryWriteUint8(this.opcode).throw(t)
 
-      const opcodeBits = unpack(opcodeBytes.bytes)
-      cursor.tryWrite(opcodeBits.subarray(4)).throw(t) // 8 - 4
+      using opcodeBits = unpack(opcodeBytes.bytes)
+      cursor.tryWrite(opcodeBits.bytes.subarray(4)).throw(t) // 8 - 4
 
       const masked = Boolean(this.mask)
       cursor.tryWriteUint8(Number(masked)).throw(t)
@@ -83,11 +85,17 @@ export class WebSocketFrame {
       this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
-        cursor.tryWrite(unpack(this.mask.get())).throw(t)
-        xor_mod(this.payload, this.mask.get())
-      }
+        using maskBits = unpack(this.mask.get())
+        cursor.tryWrite(maskBits.bytes).throw(t)
 
-      cursor.tryWrite(unpack(this.payload)).throw(t)
+        using xored = xor_mod(this.payload, this.mask.get())
+
+        using payloadBits = unpack(xored.bytes)
+        cursor.tryWrite(payloadBits.bytes).throw(t)
+      } else {
+        using payloadBits = unpack(this.payload)
+        cursor.tryWrite(payloadBits.bytes).throw(t)
+      }
 
       return Ok.void()
     })
@@ -114,15 +122,15 @@ export class WebSocketFrame {
         return new Err(CursorReadLengthUnderflowError.from(cursor))
 
       if (masked) {
-        const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t))
-        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t))
-        xor_mod(payload, rawMask)
+        const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t)).copy()
+        using xored = pack_left(cursor.tryRead(length.value * 8).throw(t))
+        const payload = xor_mod(xored.bytes, rawMask).copy()
 
         const mask = Bytes.tryCast(rawMask, 4).throw(t)
 
         return WebSocketFrame.tryNew({ final, opcode, payload, mask })
       } else {
-        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t))
+        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t)).copy()
 
         return WebSocketFrame.tryNew({ final, opcode, payload })
       }

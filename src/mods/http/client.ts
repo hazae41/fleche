@@ -5,7 +5,7 @@ import { Cursor } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
-import { Err, Ok, Result } from "@hazae41/result"
+import { Catched, Err, Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
@@ -109,7 +109,7 @@ export class HttpClientDuplex {
 
     await this.reading.emit("error", [reason])
 
-    return Result.rethrow(reason)
+    return Catched.throwOrErr(reason)
   }
 
   async #onWriteError(reason?: unknown) {
@@ -120,7 +120,7 @@ export class HttpClientDuplex {
 
     await this.writing.emit("error", [reason])
 
-    return Result.rethrow(reason)
+    return Catched.throwOrErr(reason)
   }
 
   async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
@@ -160,7 +160,7 @@ export class HttpClientDuplex {
     const type = headers.get("Transfer-Encoding")
 
     if (type === "chunked") {
-      const buffer = Cursor.allocUnsafe(64 * 1024)
+      const buffer = new Cursor(Bytes.tryAllocUnsafe(64 * 1024).unwrap())
       return new Ok({ type, buffer })
     }
 
@@ -254,7 +254,7 @@ export class HttpClientDuplex {
       server_compression.decoder.write(chunk)
       server_compression.decoder.flush()
 
-      const dchunk = server_compression.decoder.read()
+      const dchunk = server_compression.decoder.read().copy()
       this.#reader.enqueue(dchunk)
     } else {
       this.#reader.enqueue(chunk)
@@ -278,7 +278,7 @@ export class HttpClientDuplex {
       server_compression.decoder.write(chunk)
       server_compression.decoder.flush()
 
-      const dchunk = server_compression.decoder.read()
+      const dchunk = server_compression.decoder.read().copy()
       this.#reader.enqueue(dchunk)
     } else {
       this.#reader.enqueue(chunk)
@@ -287,7 +287,7 @@ export class HttpClientDuplex {
     if (server_transfer.offset === server_transfer.length) {
 
       if (server_compression.type === "gzip") {
-        const fchunk = server_compression.decoder.finish()
+        const fchunk = server_compression.decoder.finish().copy()
         this.#reader.enqueue(fchunk)
       }
 
@@ -322,7 +322,7 @@ export class HttpClientDuplex {
         if (length === 0) {
 
           if (server_compression.type === "gzip") {
-            const fchunk = server_compression.decoder.finish()
+            const fchunk = server_compression.decoder.finish().copy()
             if (fchunk.length) this.#reader.enqueue(fchunk)
           }
 
@@ -341,7 +341,7 @@ export class HttpClientDuplex {
           server_compression.decoder.write(chunk2)
           server_compression.decoder.flush()
 
-          const dchunk2 = server_compression.decoder.read()
+          const dchunk2 = server_compression.decoder.read().copy()
           if (dchunk2.length) this.#reader.enqueue(dchunk2)
         } else {
           this.#reader.enqueue(chunk2)
@@ -369,7 +369,7 @@ export class HttpClientDuplex {
       // console.debug(this.#class.name, "->", head.length, head)
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
-      const buffer = Cursor.tryAllocUnsafe(64 * 1024).throw(t)
+      const buffer = new Cursor(Bytes.tryAllocUnsafe(64 * 1024).throw(t))
 
       if (Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade")) {
         this.#state = { type: "upgrading", buffer }
