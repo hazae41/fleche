@@ -291,7 +291,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     if (this.#frame.offset)
       return await this.#onReadBuffered(bits)
     else
-      return await this.#onReadDirect(bits.unwrap().copy())
+      return await this.#onReadDirect(bits.copyAndDispose())
   }
 
   async #onReadBuffered(bits: Box<Naberius.Slice>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {

@@ -122,15 +122,15 @@ export class WebSocketFrame {
         return new Err(CursorReadLengthUnderflowError.from(cursor))
 
       if (masked) {
-        const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t)).copy()
+        const rawMask = pack_left(cursor.tryRead(4 * 8).throw(t)).copyAndDispose()
         using xored = pack_left(cursor.tryRead(length.value * 8).throw(t))
-        const payload = xor_mod(xored.bytes, rawMask).copy()
+        const payload = xor_mod(xored.bytes, rawMask).copyAndDispose()
 
         const mask = Bytes.tryCast(rawMask, 4).throw(t)
 
         return WebSocketFrame.tryNew({ final, opcode, payload, mask })
       } else {
-        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t)).copy()
+        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t)).copyAndDispose()
 
         return WebSocketFrame.tryNew({ final, opcode, payload })
       }

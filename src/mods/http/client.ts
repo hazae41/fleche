@@ -254,7 +254,7 @@ export class HttpClientDuplex {
       server_compression.decoder.write(chunk)
       server_compression.decoder.flush()
 
-      const dchunk = server_compression.decoder.read().copy()
+      const dchunk = server_compression.decoder.read().copyAndDispose()
       this.#reader.enqueue(dchunk)
     } else {
       this.#reader.enqueue(chunk)
@@ -278,7 +278,7 @@ export class HttpClientDuplex {
       server_compression.decoder.write(chunk)
       server_compression.decoder.flush()
 
-      const dchunk = server_compression.decoder.read().copy()
+      const dchunk = server_compression.decoder.read().copyAndDispose()
       this.#reader.enqueue(dchunk)
     } else {
       this.#reader.enqueue(chunk)
@@ -287,7 +287,7 @@ export class HttpClientDuplex {
     if (server_transfer.offset === server_transfer.length) {
 
       if (server_compression.type === "gzip") {
-        const fchunk = server_compression.decoder.finish().copy()
+        const fchunk = server_compression.decoder.finish().copyAndDispose()
         this.#reader.enqueue(fchunk)
       }
 
@@ -322,7 +322,7 @@ export class HttpClientDuplex {
         if (length === 0) {
 
           if (server_compression.type === "gzip") {
-            const fchunk = server_compression.decoder.finish().copy()
+            const fchunk = server_compression.decoder.finish().copyAndDispose()
             if (fchunk.length) this.#reader.enqueue(fchunk)
           }
 
@@ -341,7 +341,7 @@ export class HttpClientDuplex {
           server_compression.decoder.write(chunk2)
           server_compression.decoder.flush()
 
-          const dchunk2 = server_compression.decoder.read().copy()
+          const dchunk2 = server_compression.decoder.read().copyAndDispose()
           if (dchunk2.length) this.#reader.enqueue(dchunk2)
         } else {
           this.#reader.enqueue(chunk2)
