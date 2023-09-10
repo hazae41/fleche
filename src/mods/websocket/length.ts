@@ -10,8 +10,6 @@ export class Length {
     readonly value: number
   ) { }
 
-  [Symbol.dispose]() { }
-
   trySize(): Result<number, never> {
     if (this.value < 126)
       return new Ok(7)

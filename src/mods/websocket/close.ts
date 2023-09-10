@@ -12,8 +12,6 @@ export class WebSocketClose {
     readonly reason: Option<Bytes>
   ) { }
 
-  [Symbol.dispose]() { }
-
   static tryNew(code: number, reason?: string): Result<WebSocketClose, never> {
     return new Ok(new WebSocketClose(code, Option.wrap(reason).mapSync(Bytes.fromUtf8)))
   }

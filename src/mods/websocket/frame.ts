@@ -33,8 +33,6 @@ export class WebSocketFrame {
     this.length = new Length(this.payload.length)
   }
 
-  [Symbol.dispose]() { }
-
   static tryNew(params: {
     final: boolean,
     opcode: number,
