@@ -43,7 +43,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
   readonly #current = new WebSocketMessageState()
 
-  readonly #key = Base64.get().tryEncode(Bytes.tryRandom(16).unwrap()).unwrap()
+  readonly #key = Base64.get().tryEncodePadded(Bytes.tryRandom(16).unwrap()).unwrap()
 
   #readyState: number = WebSocket.CONNECTING
 
@@ -264,7 +264,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
-    const hashBase64 = Base64.get().tryEncode(hash).unwrap()
+    const hashBase64 = Base64.get().tryEncodePadded(hash).unwrap()
 
     if (headers.get("Sec-WebSocket-Accept") !== hashBase64)
       return new Some(new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept")))
