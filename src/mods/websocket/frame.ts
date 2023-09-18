@@ -1,4 +1,5 @@
 import { BinaryReadError, BinaryWriteError, CursorReadLengthUnderflowError } from "@hazae41/binary"
+import { Box } from "@hazae41/box"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
@@ -86,9 +87,9 @@ export class WebSocketFrame {
         using maskBitsSlice = unpack(this.mask.get())
         cursor.tryWrite(maskBitsSlice.bytes).throw(t)
 
-        using xored = xor_mod(this.payload, this.mask.get())
+        using xored = new Box(xor_mod(this.payload, this.mask.get()))
 
-        using payloadBitsSlice = unpack(xored.bytes)
+        using payloadBitsSlice = unpack(xored.unwrap().bytes)
         cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
       } else {
         using payloadBitsSlice = unpack(this.payload)
