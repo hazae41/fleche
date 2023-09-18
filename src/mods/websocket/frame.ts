@@ -86,9 +86,9 @@ export class WebSocketFrame {
         using maskBitsSlice = unpack(this.mask.get())
         cursor.tryWrite(maskBitsSlice.bytes).throw(t)
 
-        const xored = xor_mod(this.payload, this.mask.get()).copyAndDispose()
+        using xored = xor_mod(this.payload, this.mask.get())
 
-        using payloadBitsSlice = unpack(xored)
+        using payloadBitsSlice = unpack(xored.bytes)
         cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
       } else {
         using payloadBitsSlice = unpack(this.payload)
