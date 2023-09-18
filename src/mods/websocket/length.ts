@@ -22,6 +22,8 @@ export class Length {
     return Result.unthrowSync(t => {
       const lengthBytes = new Uint8Array([this.value])
 
+      using x = { [Symbol.dispose]() { } }
+
       const lengthBits = unpack(lengthBytes).copyAndDispose()
       binary.tryWrite(lengthBits.subarray(1)).throw(t) // 8 - 1
 
