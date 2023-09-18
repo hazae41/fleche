@@ -286,10 +286,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     console.log(this.#class.name, "<-", chunk.length)
 
-    using bits = new Box(unpack(chunk))
+    const bits = unpack(chunk)
 
     if (this.#frame.offset)
-      return await this.#onReadBuffered(bits)
+      return await this.#onReadBuffered(new Box(bits))
     else
       return await this.#onReadDirect(bits.copyAndDispose())
   }
