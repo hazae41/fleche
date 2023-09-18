@@ -122,7 +122,7 @@ export class WebSocketFrame {
 
       if (masked) {
         using maskSlice = new Box(pack_left(cursor.tryRead(4 * 8).throw(t)))
-        const mask = Bytes.tryCast(maskSlice.inner.bytes.slice(), 4).throw(t)
+        const mask = Bytes.tryCast(maskSlice.get().bytes.slice(), 4).throw(t)
 
         using xoredSlice = new Box(pack_left(cursor.tryRead(length.value * 8).throw(t)))
         const payload = xor_mod(xoredSlice.unwrap().bytes, maskSlice.unwrap().bytes).copyAndDispose()
