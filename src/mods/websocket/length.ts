@@ -22,10 +22,8 @@ export class Length {
     return Result.unthrowSync(t => {
       const lengthBytes = new Uint8Array([this.value])
 
-      using x = { [Symbol.dispose]() { } }
-
-      const lengthBits = unpack(lengthBytes).copyAndDispose()
-      binary.tryWrite(lengthBits.subarray(1)).throw(t) // 8 - 1
+      using lengthBits = unpack(lengthBytes)
+      binary.tryWrite(lengthBits.bytes.subarray(1)).throw(t) // 8 - 1
 
       return Ok.void()
     })
@@ -37,8 +35,8 @@ export class Length {
       lengthBytes.tryWriteUint8(126).throw(t)
       lengthBytes.tryWriteUint16(this.value).throw(t)
 
-      const lengthBits = unpack(lengthBytes.bytes).copyAndDispose()
-      binary.tryWrite(lengthBits.subarray(1)).throw(t) // (8 + 16) - 1
+      using lengthBits = unpack(lengthBytes.bytes)
+      binary.tryWrite(lengthBits.bytes.subarray(1)).throw(t) // (8 + 16) - 1
 
       return Ok.void()
     })
@@ -50,8 +48,8 @@ export class Length {
       lengthBytes.tryWriteUint8(127).throw(t)
       lengthBytes.tryWriteUint64(BigInt(this.value)).throw(t)
 
-      const lengthBits = unpack(lengthBytes.bytes).copyAndDispose()
-      binary.tryWrite(lengthBits.subarray(1)).throw(t) // (8 + 64) - 1
+      using lengthBits = unpack(lengthBytes.bytes)
+      binary.tryWrite(lengthBits.bytes.subarray(1)).throw(t) // (8 + 64) - 1
 
       return Ok.void()
     })
