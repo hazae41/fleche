@@ -74,8 +74,8 @@ export class WebSocketFrame {
       const opcodeBytes = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
       opcodeBytes.tryWriteUint8(this.opcode).throw(t)
 
-      using opcodeBits = unpack(opcodeBytes.bytes)
-      cursor.tryWrite(opcodeBits.bytes.subarray(4)).throw(t) // 8 - 4
+      const opcodeBits = unpack(opcodeBytes.bytes).copyAndDispose()
+      cursor.tryWrite(opcodeBits.subarray(4)).throw(t) // 8 - 4
 
       const masked = Boolean(this.mask)
       cursor.tryWriteUint8(Number(masked)).throw(t)
@@ -83,16 +83,16 @@ export class WebSocketFrame {
       this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
-        using maskBits = unpack(this.mask.get())
-        cursor.tryWrite(maskBits.bytes).throw(t)
+        const maskBits = unpack(this.mask.get()).copyAndDispose()
+        cursor.tryWrite(maskBits).throw(t)
 
-        using xored = xor_mod(this.payload, this.mask.get())
+        const xored = xor_mod(this.payload, this.mask.get()).copyAndDispose()
 
-        using payloadBits = unpack(xored.bytes)
-        cursor.tryWrite(payloadBits.bytes).throw(t)
+        const payloadBits = unpack(xored).copyAndDispose()
+        cursor.tryWrite(payloadBits).throw(t)
       } else {
-        using payloadBits = unpack(this.payload)
-        cursor.tryWrite(payloadBits.bytes).throw(t)
+        const payloadBits = unpack(this.payload).copyAndDispose()
+        cursor.tryWrite(payloadBits).throw(t)
       }
 
       return Ok.void()
@@ -120,11 +120,11 @@ export class WebSocketFrame {
         return new Err(CursorReadLengthUnderflowError.from(cursor))
 
       if (masked) {
-        using maskSlice = pack_left(cursor.tryRead(4 * 8).throw(t))
-        using xoredSlice = pack_left(cursor.tryRead(length.value * 8).throw(t))
-        const payload = xor_mod(xoredSlice.bytes, maskSlice.bytes).copyAndDispose()
+        const maskSlice = pack_left(cursor.tryRead(4 * 8).throw(t)).copyAndDispose()
+        const xoredSlice = pack_left(cursor.tryRead(length.value * 8).throw(t)).copyAndDispose()
+        const payload = xor_mod(xoredSlice, maskSlice).copyAndDispose()
 
-        const mask = Bytes.tryCast(maskSlice.copyAndDispose(), 4).throw(t)
+        const mask = Bytes.tryCast(maskSlice, 4).throw(t)
 
         return WebSocketFrame.tryNew({ final, opcode, payload, mask })
       } else {
