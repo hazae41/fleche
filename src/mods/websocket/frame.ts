@@ -74,8 +74,8 @@ export class WebSocketFrame {
       const opcodeBytes = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
       opcodeBytes.tryWriteUint8(this.opcode).throw(t)
 
-      const opcodeBits = unpack(opcodeBytes.bytes).copyAndDispose()
-      cursor.tryWrite(opcodeBits.subarray(4)).throw(t) // 8 - 4
+      using opcodeBitsSlice = unpack(opcodeBytes.bytes)
+      cursor.tryWrite(opcodeBitsSlice.bytes.subarray(4)).throw(t) // 8 - 4
 
       const masked = Boolean(this.mask)
       cursor.tryWriteUint8(Number(masked)).throw(t)
@@ -83,16 +83,16 @@ export class WebSocketFrame {
       this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
-        const maskBits = unpack(this.mask.get()).copyAndDispose()
-        cursor.tryWrite(maskBits).throw(t)
+        using maskBitsSlice = unpack(this.mask.get())
+        cursor.tryWrite(maskBitsSlice.bytes).throw(t)
 
         const xored = xor_mod(this.payload, this.mask.get()).copyAndDispose()
 
-        const payloadBits = unpack(xored).copyAndDispose()
-        cursor.tryWrite(payloadBits).throw(t)
+        using payloadBitsSlice = unpack(xored)
+        cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
       } else {
-        const payloadBits = unpack(this.payload).copyAndDispose()
-        cursor.tryWrite(payloadBits).throw(t)
+        using payloadBitsSlice = unpack(this.payload)
+        cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
       }
 
       return Ok.void()

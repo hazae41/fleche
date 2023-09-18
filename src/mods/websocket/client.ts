@@ -286,19 +286,19 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     console.log(this.#class.name, "<-", chunk.length)
 
-    using bits = new Box(unpack(chunk))
+    using bitsSlice = new Box(unpack(chunk))
 
     if (this.#frame.offset)
-      return await this.#onReadBuffered(bits)
+      return await this.#onReadBuffered(bitsSlice)
     else
-      return await this.#onReadDirect(bits.copyAndDispose())
+      return await this.#onReadDirect(bitsSlice.copyAndDispose())
   }
 
-  async #onReadBuffered(bits: Box<Naberius.Slice>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onReadBuffered(bitsSlice: Box<Naberius.Slice>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     return await Result.unthrow(async t => {
-      using bits2 = bits.moveIfNotMoved()
+      using bitsSlice2 = bitsSlice.moveIfNotMoved()
 
-      this.#frame.tryWrite(bits2.inner.bytes).throw(t)
+      this.#frame.tryWrite(bitsSlice2.inner.bytes).throw(t)
       const full = new Uint8Array(this.#frame.before)
 
       this.#frame.offset = 0
