@@ -1,5 +1,6 @@
 import { Base64 } from "@hazae41/base64";
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
+import { Box } from "@hazae41/box";
 import { Bytes } from "@hazae41/bytes";
 import { ControllerError, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
@@ -285,19 +286,19 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     console.log(this.#class.name, "<-", chunk.length)
 
-    const bits = unpack(chunk).copyAndDispose()
+    using bits = new Box(unpack(chunk))
 
     if (this.#frame.offset)
       return await this.#onReadBuffered(bits)
     else
-      return await this.#onReadDirect(bits)
+      return await this.#onReadDirect(bits.copyAndDispose())
   }
 
-  async #onReadBuffered(bits: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onReadBuffered(bits: Box<Naberius.Slice>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     return await Result.unthrow(async t => {
-      // using bits2 = bits.moveIfNotMoved()
+      using bits2 = bits.moveIfNotMoved()
 
-      this.#frame.tryWrite(bits).throw(t)
+      this.#frame.tryWrite(bits2.inner.bytes).throw(t)
       const full = new Uint8Array(this.#frame.before)
 
       this.#frame.offset = 0
@@ -442,9 +443,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   #tryWrite(frame: WebSocketFrame): Result<void, BinaryWriteError | ControllerError> {
     return Result.unthrowSync(t => {
       const bits = Writable.tryWriteToBytes(frame).throw(t)
-      const bytesSlice = pack_right(bits).copyAndDispose()
+      using bytesSlice = pack_right(bits)
 
-      this.#writer.tryEnqueue(bytesSlice).throw(t)
+      this.#writer.tryEnqueue(bytesSlice.bytes).throw(t)
 
       return Ok.void()
     })
