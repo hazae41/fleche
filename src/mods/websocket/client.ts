@@ -443,9 +443,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   #tryWrite(frame: WebSocketFrame): Result<void, BinaryWriteError | ControllerError> {
     return Result.unthrowSync(t => {
       const bits = Writable.tryWriteToBytes(frame).throw(t)
-      using bytes = pack_right(bits)
+      using bytesSlice = pack_right(bits)
 
-      this.#writer.tryEnqueue(bytes.bytes).throw(t)
+      this.#writer.tryEnqueue(bytesSlice.bytes).throw(t)
 
       return Ok.void()
     })
