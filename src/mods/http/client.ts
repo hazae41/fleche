@@ -7,6 +7,7 @@ import { None, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
 import { Catched, Err, Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
+import { Console } from "mods/console/index.js"
 import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
 import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCompression, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
@@ -82,7 +83,7 @@ export class HttpClientDuplex {
   }
 
   async #onReadClose() {
-    console.debug(`${this.#class.name}.onReadClose`)
+    Console.debug(`${this.#class.name}.onReadClose`)
 
     this.#reader.closed = {}
 
@@ -92,7 +93,7 @@ export class HttpClientDuplex {
   }
 
   async #onWriteClose() {
-    console.debug(`${this.#class.name}.onWriteClose`)
+    Console.debug(`${this.#class.name}.onWriteClose`)
 
     this.#writer.closed = {}
 
@@ -102,7 +103,7 @@ export class HttpClientDuplex {
   }
 
   async #onReadError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, { reason })
+    Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
     this.#writer.error(reason)
@@ -113,7 +114,7 @@ export class HttpClientDuplex {
   }
 
   async #onWriteError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, { reason })
+    Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#writer.closed = { reason }
     this.#reader.error(reason)
@@ -125,7 +126,7 @@ export class HttpClientDuplex {
 
   async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
     return await Result.unthrow(async t => {
-      // console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
+      // Console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
 
       let bytes = chunk.bytes
 
@@ -366,7 +367,7 @@ export class HttpClientDuplex {
       headers.forEach((v, k) => head += `${k}: ${v}\r\n`)
       head += `\r\n`
 
-      // console.debug(this.#class.name, "->", head.length, head)
+      // Console.debug(this.#class.name, "->", head.length, head)
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
       const buffer = new Cursor(Bytes.tryAllocUnsafe(64 * 1024).throw(t))
@@ -384,7 +385,7 @@ export class HttpClientDuplex {
   }
 
   async #onWrite(chunk: Uint8Array): Promise<Result<void, HttpError>> {
-    // console.debug(this.#class.name, "->", Bytes.toUtf8(chunk))
+    // Console.debug(this.#class.name, "->", Bytes.toUtf8(chunk))
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded") {
       this.#writer.enqueue(new Opaque(chunk))
@@ -429,7 +430,7 @@ export class HttpClientDuplex {
     const length = text.length.toString(16)
     const line = `${length}\r\n${text}\r\n`
 
-    // console.debug(this.#class.name, "->", line.length, line)
+    // Console.debug(this.#class.name, "->", line.length, line)
     this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
 
     return Ok.void()

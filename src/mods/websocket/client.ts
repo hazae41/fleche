@@ -11,6 +11,7 @@ import { CloseEvents, ErrorEvents, Plume, SuperEventTarget } from "@hazae41/plum
 import { Catched, Err, Ok, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
+import { Console } from "mods/console/index.js";
 import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
 import { ExpectedContinuationFrameError, InvalidHttpHeaderValue, InvalidHttpStatusCode, UnexpectedContinuationFrameError, WebSocketFrameError, WebSocketHttpError } from "./errors.js";
@@ -159,7 +160,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
     Result
       .runAndUnwrap(async () => await this.trySend(data))
-      .catch(e => console.debug(`${this.#class.name}.send`, { e }))
+      .catch(e => Console.debug(`${this.#class.name}.send`, { e }))
   }
 
   async trySend(data: string | ArrayBufferLike | ArrayBufferView | Blob): Promise<Result<void, BinaryError | ControllerError>> {
@@ -176,7 +177,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   close(code = 1000, reason?: string): void {
     Result
       .runAndUnwrap(async () => this.tryClose(code, reason))
-      .catch(e => console.debug(`${this.#class.name}.close`, { e }))
+      .catch(e => Console.debug(`${this.#class.name}.close`, { e }))
   }
 
   tryClose(code = 1000, reason?: string): Result<void, BinaryWriteError | ControllerError> {
@@ -198,7 +199,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadClose() {
-    console.debug(`${this.#class.name}.onReadClose`)
+    Console.debug(`${this.#class.name}.onReadClose`)
 
     this.#reader.closed = {}
 
@@ -208,7 +209,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onWriteClose() {
-    console.debug(`${this.#class.name}.onWriteClose`)
+    Console.debug(`${this.#class.name}.onWriteClose`)
 
     this.#writer.closed = {}
 
@@ -218,7 +219,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onReadError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onReadError`, { reason })
+    Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
     this.#writer.error(reason)
@@ -231,7 +232,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onWriteError(reason?: unknown) {
-    console.debug(`${this.#class.name}.onWriteError`, { reason })
+    Console.debug(`${this.#class.name}.onWriteError`, { reason })
 
     this.#writer.closed = { reason }
     this.#reader.error(reason)
@@ -321,7 +322,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
-    // console.debug(this.#class.name, "<-", chunk.length)
+    // Console.debug(this.#class.name, "<-", chunk.length)
 
     using bitsSlice = new Box(unpack(chunk))
 
@@ -363,7 +364,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onFrame(frame: WebSocketFrame) {
-    // console.debug("<-", frame)
+    // Console.debug("<-", frame)
 
     if (frame.final)
       return await this.#onFinalFrame(frame)
@@ -511,7 +512,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
       const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
 
-      // console.debug(this.#class.name, "->", current.length)
+      // Console.debug(this.#class.name, "->", current.length)
       this.#tryWrite(frame.get()).throw(t)
 
       let result = peeker.next()
@@ -525,7 +526,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
         const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
 
-        // console.debug(this.#class.name, "-> (continuation)", current.length)
+        // Console.debug(this.#class.name, "-> (continuation)", current.length)
         this.#tryWrite(frame.get()).throw(t)
       }
 
