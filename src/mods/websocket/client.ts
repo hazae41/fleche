@@ -4,9 +4,10 @@ import { Box } from "@hazae41/box";
 import { Bytes } from "@hazae41/bytes";
 import { ControllerError, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
+import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
-import { Some } from "@hazae41/option";
-import { CloseEvents, ErrorEvents, SuperEventTarget } from "@hazae41/plume";
+import { None, Some } from "@hazae41/option";
+import { CloseEvents, ErrorEvents, Plume, SuperEventTarget } from "@hazae41/plume";
 import { Catched, Err, Ok, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
@@ -33,7 +34,7 @@ export class WebSocketMessageState {
 export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #class = WebSocketClientDuplex
 
-  readonly reading = new SuperEventTarget<CloseEvents & ErrorEvents>()
+  readonly reading = new SuperEventTarget<CloseEvents & ErrorEvents & { pong: () => void }>()
   readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
 
   readonly #reader: SuperWritableStream<Uint8Array>
@@ -274,7 +275,43 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     const openEvent = new Event("open")
     this.dispatchEvent(openEvent)
 
+    this.#startPingLoop().catch(console.warn)
+
     return new Some(Ok.void())
+  }
+
+  async #startPingLoop() {
+    while (this.readyState === this.OPEN) {
+      await new Promise(ok => setTimeout(ok, 10_000))
+
+      const result = await this.tryPing()
+
+      if (result.isOk())
+        continue
+
+      this.tryClose()
+      return
+    }
+  }
+
+  async tryPing(): Promise<Result<void, ControllerError | BinaryError | Plume.AbortedError | Plume.ClosedError | Plume.ErroredError>> {
+    return Result.unthrow(async t => {
+      const final = true
+      const opcode = WebSocketFrame.opcodes.ping
+      const payload = Bytes.tryEmpty().throw(t)
+      const mask = Bytes.tryRandom(4).throw(t)
+
+      const ping = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+
+      this.#tryWrite(ping.get()).throw(t)
+
+      await Plume.tryWaitOrCloseOrErrorOrSignal(this.reading, "pong", (future: Future<Ok<void>>) => {
+        future.resolve(Ok.void())
+        return new None()
+      }, AbortSignal.timeout(10_000)).then(r => r.throw(t))
+
+      return Ok.void()
+    })
   }
 
   async #onReadStart(): Promise<Result<void, never>> {
@@ -339,6 +376,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onContinuationFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.ping)
       return await this.#onPingFrame(frame)
+    if (frame.opcode === WebSocketFrame.opcodes.pong)
+      return await this.#onPongFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.binary)
       return await this.#onBinaryFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.text)
@@ -361,6 +400,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
       return this.#tryWrite(pong.get())
     })
+  }
+
+  async #onPongFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
+    await this.reading.emit("pong", [])
+    return Ok.void()
   }
 
   async #onBinaryFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
