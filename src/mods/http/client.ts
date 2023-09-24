@@ -219,10 +219,10 @@ export class HttpClientDuplex {
       if (split === -1)
         return new Ok(new None())
 
-      const rawHead = buffer.buffer.subarray(0, split)
-      const rawBody = buffer.buffer.subarray(split + "\r\n\r\n".length, buffer.offset)
+      const rawHead = buffer.bytes.subarray(0, split)
+      const rawBody = buffer.bytes.subarray(split + "\r\n\r\n".length, buffer.offset)
 
-      const [rawStatus, ...rawHeaders] = rawHead.toString().split("\r\n")
+      const [rawStatus, ...rawHeaders] = Bytes.toUtf8(rawHead).split("\r\n")
       const [version, statusString, statusText] = rawStatus.split(" ")
 
       const status = Number(statusString)
@@ -317,7 +317,7 @@ export class HttpClientDuplex {
         if (index === -1) return Ok.void()
 
         // [length]\r\n(...) => full header => split it
-        const length = parseInt(slice.subarray(0, index).toString(), 16)
+        const length = parseInt(Bytes.toUtf8(slice.subarray(0, index)), 16)
         const rest = slice.subarray(index + 2)
 
         if (length === 0) {
