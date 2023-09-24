@@ -41,7 +41,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
 
-  readonly #frame = new Cursor(Bytes.tryAllocUnsafe(128 * 1024 * 8).unwrap())
+  readonly #buffer = new Cursor(Bytes.tryAllocUnsafe(65535).unwrap())
 
   readonly #current = new WebSocketMessageState()
 
@@ -326,7 +326,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     using bitsSlice = new Box(unpack(chunk))
 
-    if (this.#frame.offset)
+    if (this.#buffer.offset)
       return await this.#onReadBuffered(bitsSlice)
     else
       return await this.#onReadDirect(bitsSlice.copyAndDispose())
@@ -336,10 +336,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return await Result.unthrow(async t => {
       using bitsSlice2 = bitsSlice.moveIfNotMoved()
 
-      this.#frame.tryWrite(bitsSlice2.inner.bytes).throw(t)
-      const full = new Uint8Array(this.#frame.before)
+      this.#buffer.tryWrite(bitsSlice2.inner.bytes).throw(t)
+      const full = new Uint8Array(this.#buffer.before)
 
-      this.#frame.offset = 0
+      this.#buffer.offset = 0
       return await this.#onReadDirect(full)
     })
   }
@@ -352,7 +352,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
         const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor).ignore()
 
         if (frame.isErr()) {
-          this.#frame.tryWrite(cursor.after).throw(t)
+          this.#buffer.tryWrite(cursor.after).throw(t)
           break
         }
 
