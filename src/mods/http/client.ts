@@ -257,9 +257,8 @@ export class HttpClientDuplex {
       server_compression.decoder.write(chunkCopied)
       server_compression.decoder.flush()
 
-      using dchunkSlice = server_compression.decoder.read()
-      const dchunk = dchunkSlice.copyAndDispose().bytes
-      this.#reader.enqueue(dchunk)
+      const dchunkCopied = server_compression.decoder.read().copyAndDispose()
+      this.#reader.enqueue(dchunkCopied.bytes)
     } else {
       this.#reader.enqueue(chunk)
     }
@@ -283,8 +282,8 @@ export class HttpClientDuplex {
       server_compression.decoder.write(chunkCopied)
       server_compression.decoder.flush()
 
-      using dchunkSlice = server_compression.decoder.read()
-      this.#reader.enqueue(dchunkSlice.bytes)
+      const dchunkCopied = server_compression.decoder.read().copyAndDispose()
+      this.#reader.enqueue(dchunkCopied.bytes)
     } else {
       this.#reader.enqueue(chunk)
     }
@@ -292,8 +291,8 @@ export class HttpClientDuplex {
     if (server_transfer.offset === server_transfer.length) {
 
       if (server_compression.type === "gzip") {
-        using fchunkSlice = server_compression.decoder.finish()
-        this.#reader.enqueue(fchunkSlice.bytes)
+        const fchunkCopied = server_compression.decoder.finish().copyAndDispose()
+        this.#reader.enqueue(fchunkCopied.bytes)
       }
 
       this.#reader.terminate()
@@ -327,9 +326,8 @@ export class HttpClientDuplex {
         if (length === 0) {
 
           if (server_compression.type === "gzip") {
-            using fchunkSlice = server_compression.decoder.finish()
-            const fchunk = fchunkSlice.copyAndDispose().bytes
-            if (fchunk.length) this.#reader.enqueue(fchunk)
+            const fchunkCopied = server_compression.decoder.finish().copyAndDispose()
+            if (fchunkCopied.bytes.length) this.#reader.enqueue(fchunkCopied.bytes)
           }
 
           this.#reader.terminate()
@@ -348,9 +346,8 @@ export class HttpClientDuplex {
           server_compression.decoder.write(chunk2Copied)
           server_compression.decoder.flush()
 
-          using dchunk2Slice = server_compression.decoder.read()
-          const dchunk2 = dchunk2Slice.bytes
-          if (dchunk2.length) this.#reader.enqueue(dchunk2)
+          const dchunk2Copied = server_compression.decoder.read().copyAndDispose()
+          if (dchunk2Copied.bytes.length) this.#reader.enqueue(dchunk2Copied.bytes)
         } else {
           this.#reader.enqueue(chunk2)
         }

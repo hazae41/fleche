@@ -493,9 +493,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       const bits = Writable.tryWriteToBytes(frame).throw(t)
 
       const bitsCopied = new Box(new Copied(bits))
-      using bytesSlice = pack_right(bitsCopied)
+      const bytesCopied = pack_right(bitsCopied).copyAndDispose()
 
-      this.#writer.tryEnqueue(bytesSlice.bytes).throw(t)
+      this.#writer.tryEnqueue(bytesCopied.bytes).throw(t)
 
       return Ok.void()
     })

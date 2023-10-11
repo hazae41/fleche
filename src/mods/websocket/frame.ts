@@ -134,14 +134,14 @@ export class WebSocketFrame {
         const xoredBitsCopied = new Box(new Copied(cursor.tryRead(length.value * 8).throw(t)))
         using xoredBytesSlice = new Box(pack_left(xoredBitsCopied))
 
-        const payloadBits = xor_mod(xoredBytesSlice, maskBytesSlice).copyAndDispose().bytes
+        const payloadBitsCopied = xor_mod(xoredBytesSlice, maskBytesSlice).copyAndDispose()
 
-        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBits, mask })
+        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBitsCopied.bytes, mask })
       } else {
         const payloadBytesCopied = new Box(new Copied(cursor.tryRead(length.value * 8).throw(t)))
-        const payloadBits = pack_left(payloadBytesCopied).copyAndDispose().bytes
+        const payloadBitsCopied = pack_left(payloadBytesCopied).copyAndDispose()
 
-        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBits })
+        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBitsCopied.bytes })
       }
     })
   }
