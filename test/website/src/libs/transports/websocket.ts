@@ -57,9 +57,9 @@ export class WebSocketStream {
 
   static tryNew(socket: WebSocket, params?: WebSocketStreamParams) {
     if (socket.readyState !== WebSocket.OPEN)
-      throw new Panic(`WebSocket is not open`)
+      throw Panic.from(new Error(`WebSocket is not open`))
     if (socket.binaryType !== "arraybuffer")
-      throw new Panic(`WebSocket binaryType is not arraybuffer`)
+      throw Panic.from(new Error(`WebSocket binaryType is not arraybuffer`))
 
     return new WebSocketStream(socket, params)
   }
@@ -94,7 +94,7 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
 
     this.#onMessage = (msgEvent: MessageEvent<ArrayBuffer>) => {
       const bytes = new Uint8Array(msgEvent.data)
-      Console.debug("ws <-", bytes, Bytes.toUtf8(bytes))
+      console.debug("ws <-", bytes, Bytes.toUtf8(bytes))
       controller.enqueue(new Opaque(bytes))
     }
 
@@ -181,7 +181,7 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
     return await Result.unthrow(async t => {
       const bytes = Writable.tryWriteToBytes(chunk).throw(t)
 
-      Console.debug("ws ->", bytes, Bytes.toUtf8(bytes))
+      console.debug("ws ->", bytes, Bytes.toUtf8(bytes))
       this.websocket.send(bytes)
 
       return Ok.void()
