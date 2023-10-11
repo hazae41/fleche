@@ -1,4 +1,5 @@
 import { BinaryReadError, BinaryWriteError } from "@hazae41/binary"
+import { Box, Copied } from "@hazae41/box"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { unpack } from "@hazae41/naberius"
@@ -21,8 +22,8 @@ export class Length {
   #tryWrite7(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
       const lengthBytes = new Uint8Array([this.value])
-
-      using lengthBitsSlice = unpack(lengthBytes)
+      const lengthBytesCopied = new Box(new Copied(lengthBytes))
+      using lengthBitsSlice = unpack(lengthBytesCopied)
       binary.tryWrite(lengthBitsSlice.bytes.subarray(1)).throw(t) // 8 - 1
 
       return Ok.void()
@@ -31,11 +32,12 @@ export class Length {
 
   #tryWrite16(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
-      const lengthBytes = new Cursor(Bytes.tryAllocUnsafe(1 + 2).throw(t))
-      lengthBytes.tryWriteUint8(126).throw(t)
-      lengthBytes.tryWriteUint16(this.value).throw(t)
+      const lengthBytesCursor = new Cursor(Bytes.tryAllocUnsafe(1 + 2).throw(t))
+      lengthBytesCursor.tryWriteUint8(126).throw(t)
+      lengthBytesCursor.tryWriteUint16(this.value).throw(t)
 
-      using lengthBitsSlice = unpack(lengthBytes.bytes)
+      const lengthBytesCopied = new Box(new Copied(lengthBytesCursor.bytes))
+      using lengthBitsSlice = unpack(lengthBytesCopied)
       binary.tryWrite(lengthBitsSlice.bytes.subarray(1)).throw(t) // (8 + 16) - 1
 
       return Ok.void()
@@ -44,11 +46,12 @@ export class Length {
 
   #tryWrite64(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
-      const lengthBytes = new Cursor(Bytes.tryAllocUnsafe(1 + 8).throw(t))
-      lengthBytes.tryWriteUint8(127).throw(t)
-      lengthBytes.tryWriteUint64(BigInt(this.value)).throw(t)
+      const lengthBytesCursor = new Cursor(Bytes.tryAllocUnsafe(1 + 8).throw(t))
+      lengthBytesCursor.tryWriteUint8(127).throw(t)
+      lengthBytesCursor.tryWriteUint64(BigInt(this.value)).throw(t)
 
-      using lengthBitsSlice = unpack(lengthBytes.bytes)
+      const lengthBytesCopied = new Box(new Copied(lengthBytesCursor.bytes))
+      using lengthBitsSlice = unpack(lengthBytesCopied)
       binary.tryWrite(lengthBitsSlice.bytes.subarray(1)).throw(t) // (8 + 64) - 1
 
       return Ok.void()

@@ -1,5 +1,5 @@
 import { BinaryReadError, BinaryWriteError, CursorReadLengthUnderflowError } from "@hazae41/binary"
-import { Box } from "@hazae41/box"
+import { Box, Copied } from "@hazae41/box"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
@@ -72,10 +72,12 @@ export class WebSocketFrame {
       cursor.tryWriteUint8(0).throw(t)
       cursor.tryWriteUint8(0).throw(t)
 
-      const opcodeBytes = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
-      opcodeBytes.tryWriteUint8(this.opcode).throw(t)
+      const opcodeBytesCursor = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
+      opcodeBytesCursor.tryWriteUint8(this.opcode).throw(t)
 
-      using opcodeBitsSlice = unpack(opcodeBytes.bytes)
+      const opcodeBytesCopied = new Box(new Copied(opcodeBytesCursor.bytes))
+      using opcodeBitsSlice = unpack(opcodeBytesCopied)
+
       cursor.tryWrite(opcodeBitsSlice.bytes.subarray(4)).throw(t) // 8 - 4
 
       const masked = Boolean(this.mask)
@@ -84,15 +86,18 @@ export class WebSocketFrame {
       this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
-        using maskBitsSlice = unpack(this.mask.get())
+        const maskBytesCopied = new Box(new Copied(this.mask.get()))
+        using maskBitsSlice = unpack(maskBytesCopied)
         cursor.tryWrite(maskBitsSlice.bytes).throw(t)
 
-        using xored = new Box(xor_mod(this.payload, this.mask.get()))
+        const payloadBytesCopied = new Box(new Copied(this.payload))
+        using xoredBytesSlice = new Box(xor_mod(payloadBytesCopied, maskBytesCopied))
 
-        using payloadBitsSlice = unpack(xored.unwrap().bytes)
+        using payloadBitsSlice = unpack(xoredBytesSlice)
         cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
       } else {
-        using payloadBitsSlice = unpack(this.payload)
+        const payloadBytesCopied = new Box(new Copied(this.payload))
+        using payloadBitsSlice = unpack(payloadBytesCopied)
         cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
       }
 
@@ -121,17 +126,22 @@ export class WebSocketFrame {
         return new Err(CursorReadLengthUnderflowError.from(cursor))
 
       if (masked) {
-        using maskSlice = new Box(pack_left(cursor.tryRead(4 * 8).throw(t)))
-        const mask = Bytes.tryCast(maskSlice.get().bytes.slice(), 4).throw(t)
+        const maskBitsCopied = new Box(new Copied(cursor.tryRead(4 * 8).throw(t)))
+        using maskBytesSlice = new Box(pack_left(maskBitsCopied))
 
-        using xoredSlice = new Box(pack_left(cursor.tryRead(length.value * 8).throw(t)))
-        const payload = xor_mod(xoredSlice.unwrap().bytes, maskSlice.unwrap().bytes).copyAndDispose()
+        const mask = Bytes.tryCast(maskBytesSlice.get().bytes.slice(), 4).throw(t)
 
-        return WebSocketFrame.tryNew({ final, opcode, payload, mask })
+        const xoredBitsCopied = new Box(new Copied(cursor.tryRead(length.value * 8).throw(t)))
+        using xoredBytesSlice = new Box(pack_left(xoredBitsCopied))
+
+        const payloadBits = xor_mod(xoredBytesSlice, maskBytesSlice).copyAndDispose().bytes
+
+        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBits, mask })
       } else {
-        const payload = pack_left(cursor.tryRead(length.value * 8).throw(t)).copyAndDispose()
+        const payloadBytesCopied = new Box(new Copied(cursor.tryRead(length.value * 8).throw(t)))
+        const payloadBits = pack_left(payloadBytesCopied).copyAndDispose().bytes
 
-        return WebSocketFrame.tryNew({ final, opcode, payload })
+        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBits })
       }
     })
   }

@@ -1,6 +1,6 @@
 import { Base64 } from "@hazae41/base64";
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
-import { Box } from "@hazae41/box";
+import { Box, Copied } from "@hazae41/box";
 import { Bytes } from "@hazae41/bytes";
 import { ControllerError, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
@@ -45,7 +45,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
   readonly #current = new WebSocketMessageState()
 
-  readonly #key = Base64.get().tryEncodePadded(Bytes.tryRandom(16).unwrap()).unwrap()
+  readonly #keyCopied = new Box(new Copied(Bytes.tryRandom(16).unwrap()))
+  readonly #keyBase64 = Base64.get().tryEncodePadded(this.#keyCopied).unwrap()
 
   #readyState: number = WebSocket.CONNECTING
 
@@ -80,7 +81,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     headers.set("Connection", "Upgrade")
     headers.set("Upgrade", "websocket")
-    headers.set("Sec-WebSocket-Key", this.#key)
+    headers.set("Sec-WebSocket-Key", this.#keyBase64)
     headers.set("Sec-WebSocket-Version", "13")
 
     const http = new HttpClientDuplex(stream, { target, method: "GET", headers })
@@ -263,10 +264,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     if (!Strings.equalsIgnoreCase(headers.get("Upgrade"), "websocket"))
       return new Some(new Err(new InvalidHttpHeaderValue("Upgrade")))
 
-    const prehash = Bytes.concat([Bytes.fromUtf8(this.#key), ACCEPT_SUFFIX])
+    const prehash = Bytes.concat([Bytes.fromUtf8(this.#keyBase64), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
-    const hashBase64 = Base64.get().tryEncodePadded(hash).unwrap()
+    const hashBase64 = Base64.get().tryEncodePadded(new Box(new Copied(hash))).unwrap()
 
     if (headers.get("Sec-WebSocket-Accept") !== hashBase64)
       return new Some(new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept")))
@@ -324,17 +325,19 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
-    using bitsSlice = new Box(unpack(chunk))
+    const bytesCopied = new Box(new Copied(chunk))
+    using bitsSlice = new Box(unpack(bytesCopied))
 
     if (this.#buffer.offset)
       return await this.#onReadBuffered(bitsSlice)
-    else
-      return await this.#onReadDirect(bitsSlice.copyAndDispose())
+
+    const bitsCopied = bitsSlice.unwrap().copyAndDispose()
+    return await this.#onReadDirect(bitsCopied.bytes)
   }
 
   async #onReadBuffered(bitsSlice: Box<Naberius.Slice>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     return await Result.unthrow(async t => {
-      using bitsSlice2 = bitsSlice.moveIfNotMoved()
+      using bitsSlice2 = bitsSlice.move()
 
       this.#buffer.tryWrite(bitsSlice2.inner.bytes).throw(t)
       const full = new Uint8Array(this.#buffer.before)
@@ -344,9 +347,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  async #onReadDirect(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onReadDirect(bits: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     return await Result.unthrow(async t => {
-      const cursor = new Cursor(chunk)
+      const cursor = new Cursor(bits)
 
       while (cursor.remaining) {
         const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor).ignore()
@@ -488,7 +491,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   #tryWrite(frame: WebSocketFrame): Result<void, BinaryWriteError | ControllerError> {
     return Result.unthrowSync(t => {
       const bits = Writable.tryWriteToBytes(frame).throw(t)
-      using bytesSlice = pack_right(bits)
+
+      const bitsCopied = new Box(new Copied(bits))
+      using bytesSlice = pack_right(bitsCopied)
 
       this.#writer.tryEnqueue(bytesSlice.bytes).throw(t)
 
