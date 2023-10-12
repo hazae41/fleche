@@ -1,9 +1,9 @@
 import { BinaryWriteError, Opaque, Writable } from "@hazae41/binary"
-import { Box, Copied } from "@hazae41/box"
 import { Bytes, BytesError } from "@hazae41/bytes"
 import { SuperTransformStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
+import { Naberius } from "@hazae41/naberius"
 import { None, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
 import { Catched, Err, Ok, Result } from "@hazae41/result"
@@ -253,12 +253,12 @@ export class HttpClientDuplex {
     const { server_compression } = state
 
     if (server_compression.type === "gzip") {
-      const chunkCopied = new Box(new Copied(chunk))
-      server_compression.decoder.write(chunkCopied)
+      using chunkMemory = new Naberius.Memory(chunk)
+      server_compression.decoder.write(chunkMemory)
       server_compression.decoder.flush()
 
-      const dchunkCopied = server_compression.decoder.read().copyAndDispose()
-      this.#reader.enqueue(dchunkCopied.bytes)
+      using dchunkMemory = server_compression.decoder.read()
+      this.#reader.enqueue(dchunkMemory.bytes.slice())
     } else {
       this.#reader.enqueue(chunk)
     }
@@ -278,12 +278,12 @@ export class HttpClientDuplex {
       return new Err(new ContentLengthOverflowError(server_transfer.offset, server_transfer.length))
 
     if (server_compression.type === "gzip") {
-      const chunkCopied = new Box(new Copied(chunk))
-      server_compression.decoder.write(chunkCopied)
+      using chunkMemory = new Naberius.Memory(chunk)
+      server_compression.decoder.write(chunkMemory)
       server_compression.decoder.flush()
 
-      const dchunkCopied = server_compression.decoder.read().copyAndDispose()
-      this.#reader.enqueue(dchunkCopied.bytes)
+      using dchunkMemory = server_compression.decoder.read()
+      this.#reader.enqueue(dchunkMemory.bytes.slice())
     } else {
       this.#reader.enqueue(chunk)
     }
@@ -291,8 +291,8 @@ export class HttpClientDuplex {
     if (server_transfer.offset === server_transfer.length) {
 
       if (server_compression.type === "gzip") {
-        const fchunkCopied = server_compression.decoder.finish().copyAndDispose()
-        this.#reader.enqueue(fchunkCopied.bytes)
+        using fchunkMemory = server_compression.decoder.finish()
+        this.#reader.enqueue(fchunkMemory.bytes.slice())
       }
 
       this.#reader.terminate()
@@ -326,8 +326,10 @@ export class HttpClientDuplex {
         if (length === 0) {
 
           if (server_compression.type === "gzip") {
-            const fchunkCopied = server_compression.decoder.finish().copyAndDispose()
-            if (fchunkCopied.bytes.length) this.#reader.enqueue(fchunkCopied.bytes)
+            using fchunkMemory = server_compression.decoder.finish()
+
+            if (fchunkMemory.bytes.length)
+              this.#reader.enqueue(fchunkMemory.bytes.slice())
           }
 
           this.#reader.terminate()
@@ -342,12 +344,14 @@ export class HttpClientDuplex {
         const rest2 = rest.subarray(length + 2)
 
         if (server_compression.type === "gzip") {
-          const chunk2Copied = new Box(new Copied(chunk2))
-          server_compression.decoder.write(chunk2Copied)
+          using chunk2Memory = new Foras.Memory(chunk2)
+          server_compression.decoder.write(chunk2Memory)
           server_compression.decoder.flush()
 
-          const dchunk2Copied = server_compression.decoder.read().copyAndDispose()
-          if (dchunk2Copied.bytes.length) this.#reader.enqueue(dchunk2Copied.bytes)
+          using dchunk2Memory = server_compression.decoder.read()
+
+          if (dchunk2Memory.bytes.length)
+            this.#reader.enqueue(dchunk2Memory.bytes.slice())
         } else {
           this.#reader.enqueue(chunk2)
         }

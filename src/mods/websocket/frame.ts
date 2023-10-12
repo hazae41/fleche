@@ -1,8 +1,7 @@
 import { BinaryReadError, BinaryWriteError, CursorReadLengthUnderflowError } from "@hazae41/binary"
-import { Box, Copied } from "@hazae41/box"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
-import { pack_left, unpack, xor_mod } from "@hazae41/naberius"
+import { Naberius, pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Option } from "@hazae41/option"
 import { Err, Ok, Result } from "@hazae41/result"
 import { Length } from "mods/websocket/length.js"
@@ -75,10 +74,10 @@ export class WebSocketFrame {
       const opcodeBytesCursor = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
       opcodeBytesCursor.tryWriteUint8(this.opcode).throw(t)
 
-      const opcodeBytesCopied = new Box(new Copied(opcodeBytesCursor.bytes))
-      using opcodeBitsSlice = unpack(opcodeBytesCopied)
+      using opcodeBytesMemory = new Naberius.Memory(opcodeBytesCursor.bytes)
+      using opcodeBitsMemory = unpack(opcodeBytesMemory)
 
-      cursor.tryWrite(opcodeBitsSlice.bytes.subarray(4)).throw(t) // 8 - 4
+      cursor.tryWrite(opcodeBitsMemory.bytes.subarray(4)).throw(t) // 8 - 4
 
       const masked = Boolean(this.mask)
       cursor.tryWriteUint8(Number(masked)).throw(t)
@@ -86,19 +85,19 @@ export class WebSocketFrame {
       this.length.tryWrite(cursor).throw(t)
 
       if (this.mask.isSome()) {
-        const maskBytesCopied = new Box(new Copied(this.mask.get()))
-        using maskBitsSlice = unpack(maskBytesCopied)
-        cursor.tryWrite(maskBitsSlice.bytes).throw(t)
+        using maskBytesMemory = new Naberius.Memory(this.mask.get())
+        using maskBitsMemory = unpack(maskBytesMemory)
+        cursor.tryWrite(maskBitsMemory.bytes).throw(t)
 
-        const payloadBytesCopied = new Box(new Copied(this.payload))
-        using xoredBytesSlice = new Box(xor_mod(payloadBytesCopied, maskBytesCopied))
+        using xoredBytesMemory = new Naberius.Memory(this.payload)
+        xor_mod(xoredBytesMemory, maskBytesMemory)
 
-        using payloadBitsSlice = unpack(xoredBytesSlice)
-        cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
+        using xoredBitsMemory = unpack(xoredBytesMemory)
+        cursor.tryWrite(xoredBitsMemory.bytes).throw(t)
       } else {
-        const payloadBytesCopied = new Box(new Copied(this.payload))
-        using payloadBitsSlice = unpack(payloadBytesCopied)
-        cursor.tryWrite(payloadBitsSlice.bytes).throw(t)
+        using payloadBytesMemory = new Naberius.Memory(this.payload)
+        using payloadBitsMemory = unpack(payloadBytesMemory)
+        cursor.tryWrite(payloadBitsMemory.bytes).throw(t)
       }
 
       return Ok.void()
@@ -126,22 +125,28 @@ export class WebSocketFrame {
         return new Err(CursorReadLengthUnderflowError.from(cursor))
 
       if (masked) {
-        const maskBitsCopied = new Box(new Copied(cursor.tryRead(4 * 8).throw(t)))
-        using maskBytesSlice = new Box(pack_left(maskBitsCopied))
+        const maskBitsBytes = cursor.tryRead(4 * 8).throw(t)
+        using maskBitsMemory = new Naberius.Memory(maskBitsBytes)
+        using maskBytesMemory = pack_left(maskBitsMemory)
 
-        const mask = Bytes.tryCast(maskBytesSlice.get().bytes.slice(), 4).throw(t)
+        const xoredBitsBytes = cursor.tryRead(length.value * 8).throw(t)
+        using xoredBitsMemory = new Naberius.Memory(xoredBitsBytes)
+        using xoredBytesMemory = pack_left(xoredBitsMemory)
 
-        const xoredBitsCopied = new Box(new Copied(cursor.tryRead(length.value * 8).throw(t)))
-        using xoredBytesSlice = new Box(pack_left(xoredBitsCopied))
+        xor_mod(xoredBytesMemory, maskBytesMemory)
 
-        const payloadBitsCopied = xor_mod(xoredBytesSlice, maskBytesSlice).copyAndDispose()
+        const mask = Bytes.tryCast(maskBytesMemory.bytes.slice(), 4).throw(t)
+        const payload = xoredBytesMemory.bytes.slice()
 
-        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBitsCopied.bytes, mask })
+        return WebSocketFrame.tryNew({ final, opcode, payload, mask })
       } else {
-        const payloadBytesCopied = new Box(new Copied(cursor.tryRead(length.value * 8).throw(t)))
-        const payloadBitsCopied = pack_left(payloadBytesCopied).copyAndDispose()
+        const payloadBitsBytes = cursor.tryRead(length.value * 8).throw(t)
+        using payloadBitsMemory = new Naberius.Memory(payloadBitsBytes)
+        using payloadBytesMemory = pack_left(payloadBitsMemory)
 
-        return WebSocketFrame.tryNew({ final, opcode, payload: payloadBitsCopied.bytes })
+        const payload = payloadBytesMemory.bytes.slice()
+
+        return WebSocketFrame.tryNew({ final, opcode, payload })
       }
     })
   }

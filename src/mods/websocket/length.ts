@@ -1,8 +1,7 @@
 import { BinaryReadError, BinaryWriteError } from "@hazae41/binary"
-import { Box, Copied } from "@hazae41/box"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
-import { unpack } from "@hazae41/naberius"
+import { Naberius, unpack } from "@hazae41/naberius"
 import { Ok, Result } from "@hazae41/result"
 
 export class Length {
@@ -21,10 +20,12 @@ export class Length {
 
   #tryWrite7(binary: Cursor): Result<void, BinaryWriteError> {
     return Result.unthrowSync(t => {
-      const lengthBytes = new Uint8Array([this.value])
-      const lengthBytesCopied = new Box(new Copied(lengthBytes))
-      using lengthBitsSlice = unpack(lengthBytesCopied)
-      binary.tryWrite(lengthBitsSlice.bytes.subarray(1)).throw(t) // 8 - 1
+      const lengthBytesBytes = new Uint8Array([this.value])
+
+      using lengthBytesMemory = new Naberius.Memory(lengthBytesBytes)
+      using lengthBitsMemory = unpack(lengthBytesMemory)
+
+      binary.tryWrite(lengthBitsMemory.bytes.subarray(1)).throw(t) // 8 - 1
 
       return Ok.void()
     })
@@ -36,9 +37,10 @@ export class Length {
       lengthBytesCursor.tryWriteUint8(126).throw(t)
       lengthBytesCursor.tryWriteUint16(this.value).throw(t)
 
-      const lengthBytesCopied = new Box(new Copied(lengthBytesCursor.bytes))
-      using lengthBitsSlice = unpack(lengthBytesCopied)
-      binary.tryWrite(lengthBitsSlice.bytes.subarray(1)).throw(t) // (8 + 16) - 1
+      using lengthBytesMemory = new Naberius.Memory(lengthBytesCursor.bytes)
+      using lengthBitsMemory = unpack(lengthBytesMemory)
+
+      binary.tryWrite(lengthBitsMemory.bytes.subarray(1)).throw(t) // (8 + 16) - 1
 
       return Ok.void()
     })
@@ -50,9 +52,10 @@ export class Length {
       lengthBytesCursor.tryWriteUint8(127).throw(t)
       lengthBytesCursor.tryWriteUint64(BigInt(this.value)).throw(t)
 
-      const lengthBytesCopied = new Box(new Copied(lengthBytesCursor.bytes))
-      using lengthBitsSlice = unpack(lengthBytesCopied)
-      binary.tryWrite(lengthBitsSlice.bytes.subarray(1)).throw(t) // (8 + 64) - 1
+      using lengthBytesMemory = new Naberius.Memory(lengthBytesCursor.bytes)
+      using lengthBitsMemory = unpack(lengthBytesMemory)
+
+      binary.tryWrite(lengthBitsMemory.bytes.subarray(1)).throw(t) // (8 + 64) - 1
 
       return Ok.void()
     })

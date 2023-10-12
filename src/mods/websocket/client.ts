@@ -1,6 +1,6 @@
 import { Base64 } from "@hazae41/base64";
 import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
-import { Box, Copied } from "@hazae41/box";
+import { Box } from "@hazae41/box";
 import { Bytes } from "@hazae41/bytes";
 import { ControllerError, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
@@ -45,8 +45,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
   readonly #current = new WebSocketMessageState()
 
-  readonly #keyCopied = new Box(new Copied(Bytes.tryRandom(16).unwrap()))
-  readonly #keyBase64 = Base64.get().tryEncodePadded(this.#keyCopied).unwrap()
+  readonly #keyBytes = Bytes.tryRandom(16).unwrap()
+  readonly #keyBase64 = Base64.get().tryEncodePadded(this.#keyBytes).unwrap()
 
   #readyState: number = WebSocket.CONNECTING
 
@@ -267,7 +267,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     const prehash = Bytes.concat([Bytes.fromUtf8(this.#keyBase64), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
-    const hashBase64 = Base64.get().tryEncodePadded(new Box(new Copied(hash))).unwrap()
+    const hashBase64 = Base64.get().tryEncodePadded(hash).unwrap()
 
     if (headers.get("Sec-WebSocket-Accept") !== hashBase64)
       return new Some(new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept")))
@@ -325,21 +325,20 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
-    const bytesCopied = new Box(new Copied(chunk))
-    using bitsSlice = new Box(unpack(bytesCopied))
+    using bytesMemory = new Naberius.Memory(chunk)
+    using bitsMemoryBox = new Box(unpack(bytesMemory))
 
     if (this.#buffer.offset)
-      return await this.#onReadBuffered(bitsSlice)
+      return await this.#onReadBuffered(bitsMemoryBox)
 
-    const bitsCopied = bitsSlice.unwrap().copyAndDispose()
-    return await this.#onReadDirect(bitsCopied.bytes)
+    return await this.#onReadDirect(bitsMemoryBox.unwrap().copyAndDispose())
   }
 
-  async #onReadBuffered(bitsSlice: Box<Naberius.Slice>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onReadBuffered(bitsMemoryBox: Box<Naberius.Memory>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
     return await Result.unthrow(async t => {
-      using bitsSlice2 = bitsSlice.move()
+      using bitsMemoryBox2 = bitsMemoryBox.move()
 
-      this.#buffer.tryWrite(bitsSlice2.inner.bytes).throw(t)
+      this.#buffer.tryWrite(bitsMemoryBox2.inner.bytes).throw(t)
       const full = new Uint8Array(this.#buffer.before)
 
       this.#buffer.offset = 0
@@ -492,10 +491,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Result.unthrowSync(t => {
       const bits = Writable.tryWriteToBytes(frame).throw(t)
 
-      const bitsCopied = new Box(new Copied(bits))
-      const bytesCopied = pack_right(bitsCopied).copyAndDispose()
+      using bitsMemory = new Naberius.Memory(bits)
+      using bytesMemory = pack_right(bitsMemory)
 
-      this.#writer.tryEnqueue(bytesCopied.bytes).throw(t)
+      this.#writer.tryEnqueue(bytesMemory.bytes.slice()).throw(t)
 
       return Ok.void()
     })
