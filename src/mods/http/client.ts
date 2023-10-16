@@ -3,7 +3,6 @@ import { Bytes, BytesError } from "@hazae41/bytes"
 import { SuperTransformStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
-import { Naberius } from "@hazae41/naberius"
 import { None, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
 import { Catched, Err, Ok, Result } from "@hazae41/result"
@@ -253,7 +252,7 @@ export class HttpClientDuplex {
     const { server_compression } = state
 
     if (server_compression.type === "gzip") {
-      using chunkMemory = new Naberius.Memory(chunk)
+      using chunkMemory = new Foras.Memory(chunk)
       server_compression.decoder.write(chunkMemory)
       server_compression.decoder.flush()
 
@@ -278,7 +277,7 @@ export class HttpClientDuplex {
       return new Err(new ContentLengthOverflowError(server_transfer.offset, server_transfer.length))
 
     if (server_compression.type === "gzip") {
-      using chunkMemory = new Naberius.Memory(chunk)
+      using chunkMemory = new Foras.Memory(chunk)
       server_compression.decoder.write(chunkMemory)
       server_compression.decoder.flush()
 
