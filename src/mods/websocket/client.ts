@@ -1,8 +1,8 @@
 import { Base64 } from "@hazae41/base64";
-import { BinaryError, BinaryWriteError, Opaque, Readable, Writable } from "@hazae41/binary";
+import { Opaque, Readable, Writable } from "@hazae41/binary";
 import { Box } from "@hazae41/box";
 import { Bytes } from "@hazae41/bytes";
-import { ControllerError, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
 import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
@@ -14,7 +14,7 @@ import { Strings } from "libs/strings/strings.js";
 import { Console } from "mods/console/index.js";
 import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
-import { ExpectedContinuationFrameError, InvalidHttpHeaderValue, InvalidHttpStatusCode, UnexpectedContinuationFrameError, WebSocketFrameError, WebSocketHttpError } from "./errors.js";
+import { ExpectedContinuationFrameError, InvalidHttpHeaderValue, InvalidHttpStatusCode, UnexpectedContinuationFrameError, WebSocketHttpError } from "./errors.js";
 import { WebSocketFrame } from "./frame.js";
 
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
@@ -26,7 +26,7 @@ export interface WebSocketClientDuplexParams {
 
 export class WebSocketMessageState {
 
-  readonly buffer = new Cursor(Bytes.tryAllocUnsafe(64 * 1024).unwrap())
+  readonly buffer = new Cursor(Bytes.alloc(64 * 1024))
 
   opcode?: number
 
@@ -41,11 +41,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
 
-  readonly #buffer = new Cursor(Bytes.tryAllocUnsafe(65535).unwrap())
+  readonly #buffer = new Cursor(Bytes.alloc(65535))
 
   readonly #current = new WebSocketMessageState()
 
-  readonly #keyBytes = Bytes.tryRandom(16).unwrap()
+  readonly #keyBytes = Bytes.random(16)
   readonly #keyBase64 = Base64.get().tryEncodePadded(this.#keyBytes).unwrap()
 
   #readyState: number = WebSocket.CONNECTING
@@ -164,7 +164,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .catch(e => Console.debug(`${this.#class.name}.send`, { e }))
   }
 
-  async trySend(data: string | ArrayBufferLike | ArrayBufferView | Blob): Promise<Result<void, BinaryError | ControllerError>> {
+  async trySend(data: string | ArrayBufferLike | ArrayBufferView | Blob): Promise<Result<void, Error>> {
     if (typeof data === "string")
       return this.#trySplit(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
     else if (data instanceof Blob)
@@ -181,18 +181,18 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .catch(e => Console.debug(`${this.#class.name}.close`, { e }))
   }
 
-  tryClose(code = 1000, reason?: string): Result<void, BinaryWriteError | ControllerError> {
+  tryClose(code = 1000, reason?: string): Result<void, Error> {
     return Result.unthrowSync(t => {
       const final = true
       const opcode = WebSocketFrame.opcodes.close
-      const close = WebSocketClose.tryNew(code, reason)
-      const payload = Writable.tryWriteToBytes(close.get()).throw(t)
+      const close = WebSocketClose.from(code, reason)
+      const payload = Writable.tryWriteToBytes(close).throw(t)
 
       const mask = Bytes.random(4)
 
-      const frame = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+      const frame = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      this.#tryWrite(frame.get()).throw(t)
+      this.#tryWrite(frame).throw(t)
       this.#readyState = this.CLOSING
 
       return Ok.void()
@@ -296,16 +296,16 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     }
   }
 
-  async tryPing(): Promise<Result<void, ControllerError | BinaryError | Plume.AbortedError | Plume.ClosedError | Plume.ErroredError>> {
+  async tryPing(): Promise<Result<void, Error>> {
     return Result.unthrow(async t => {
       const final = true
       const opcode = WebSocketFrame.opcodes.ping
-      const payload = Bytes.tryEmpty().throw(t)
-      const mask = Bytes.tryRandom(4).throw(t)
+      const payload = Bytes.empty()
+      const mask = Bytes.random(4)
 
-      const ping = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+      const ping = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      this.#tryWrite(ping.get()).throw(t)
+      this.#tryWrite(ping).throw(t)
 
       await Plume.tryWaitOrCloseOrErrorOrSignal(this.reading, "pong", (future: Future<Ok<void>>) => {
         future.resolve(Ok.void())
@@ -322,7 +322,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onRead(chunk: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onRead(chunk: Uint8Array): Promise<Result<void, Error>> {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
     using bytesMemory = new Naberius.Memory(chunk)
@@ -334,7 +334,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return await this.#onReadDirect(bitsMemoryBox.unwrap().copyAndDispose())
   }
 
-  async #onReadBuffered(bitsMemoryBox: Box<Naberius.Memory>): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onReadBuffered(bitsMemoryBox: Box<Naberius.Memory>): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       using bitsMemoryBox2 = bitsMemoryBox.move()
 
@@ -346,7 +346,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  async #onReadDirect(bits: Uint8Array): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onReadDirect(bits: Uint8Array): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       const cursor = new Cursor(bits)
 
@@ -374,7 +374,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onStartFrame(frame)
   }
 
-  async #onFinalFrame(frame: WebSocketFrame): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onFinalFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
     if (frame.opcode === WebSocketFrame.opcodes.continuation)
       return await this.#onContinuationFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.ping)
@@ -392,16 +392,16 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onPingFrame(frame: WebSocketFrame): Promise<Result<void, BinaryWriteError | ControllerError>> {
+  async #onPingFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       const final = true
       const opcode = WebSocketFrame.opcodes.pong
       const payload = frame.payload
-      const mask = Bytes.tryRandom(4).throw(t)
+      const mask = Bytes.random(4)
 
-      const pong = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+      const pong = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      return this.#tryWrite(pong.get())
+      return this.#tryWrite(pong)
     })
   }
 
@@ -425,7 +425,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onCloseFrame(frame: WebSocketFrame): Promise<Result<void, BinaryError | ControllerError>> {
+  async #onCloseFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       if (this.readyState === this.OPEN) {
         const final = true
@@ -433,9 +433,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
         const payload = frame.payload
         const mask = Bytes.random(4)
 
-        const echo = WebSocketFrame.tryNew({ final, opcode, payload, mask })
+        const echo = WebSocketFrame.from({ final, opcode, payload, mask })
 
-        return this.#tryWrite(echo.get())
+        return this.#tryWrite(echo)
       }
 
       this.#readyState = this.CLOSED
@@ -456,7 +456,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, WebSocketFrameError | BinaryWriteError>> {
+  async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
     if (frame.opcode !== WebSocketFrame.opcodes.continuation) {
 
       if (this.#current.opcode !== undefined)
@@ -468,7 +468,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return this.#current.buffer.tryWrite(frame.payload)
   }
 
-  async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, WebSocketFrameError | BinaryError | ControllerError>> {
+  async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       this.#current.buffer.tryWrite(frame.payload).throw(t)
 
@@ -478,16 +478,16 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       const final = true
       const opcode = this.#current.opcode
       const payload = new Uint8Array(this.#current.buffer.before)
-      const full = WebSocketFrame.tryNew({ final, opcode, payload })
+      const full = WebSocketFrame.from({ final, opcode, payload })
 
       this.#current.opcode = undefined
       this.#current.buffer.offset = 0
 
-      return await this.#onFinalFrame(full.get())
+      return await this.#onFinalFrame(full)
     })
   }
 
-  #tryWrite(frame: WebSocketFrame): Result<void, BinaryWriteError | ControllerError> {
+  #tryWrite(frame: WebSocketFrame): Result<void, Error> {
     return Result.unthrowSync(t => {
       const bits = Writable.tryWriteToBytes(frame).throw(t)
 
@@ -500,7 +500,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  #trySplit(opcode: number, data: Uint8Array): Result<void, BinaryError | ControllerError> {
+  #trySplit(opcode: number, data: Uint8Array): Result<void, Error> {
     return Result.unthrowSync(t => {
       const chunks = new Cursor(data).trySplit(32_768)
       const peeker = Iterators.peek(chunks)
@@ -512,12 +512,12 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
       const { current, next } = first.value
       const final = Boolean(next.done)
-      const mask = Bytes.tryRandom(4).throw(t)
+      const mask = Bytes.random(4)
 
-      const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+      const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
 
       // Console.debug(this.#class.name, "->", current.length)
-      this.#tryWrite(frame.get()).throw(t)
+      this.#tryWrite(frame).throw(t)
 
       let result = peeker.next()
 
@@ -528,10 +528,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
         const opcode = WebSocketFrame.opcodes.continuation
         const mask = Bytes.random(4)
 
-        const frame = WebSocketFrame.tryNew({ final, opcode, payload: current, mask })
+        const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
 
         // Console.debug(this.#class.name, "-> (continuation)", current.length)
-        this.#tryWrite(frame.get()).throw(t)
+        this.#tryWrite(frame).throw(t)
       }
 
       return result.value

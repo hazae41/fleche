@@ -1,5 +1,5 @@
-import { BinaryWriteError, Opaque, Writable } from "@hazae41/binary"
-import { Bytes, BytesError } from "@hazae41/bytes"
+import { Opaque, Writable } from "@hazae41/binary"
+import { Bytes } from "@hazae41/bytes"
 import { SuperTransformStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
@@ -124,7 +124,7 @@ export class HttpClientDuplex {
     return Catched.throwOrErr(reason)
   }
 
-  async #onRead(chunk: Opaque): Promise<Result<void, HttpError | BinaryWriteError | EventError>> {
+  async #onRead(chunk: Opaque): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       // Console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
 
@@ -161,7 +161,7 @@ export class HttpClientDuplex {
     const type = headers.get("Transfer-Encoding")
 
     if (type === "chunked") {
-      const buffer = new Cursor(Bytes.tryAllocUnsafe(64 * 1024).unwrap())
+      const buffer = new Cursor(Bytes.alloc(64 * 1024))
       return new Ok({ type, buffer })
     }
 
@@ -208,7 +208,7 @@ export class HttpClientDuplex {
     return new Err(new UnsupportedContentEncoding(type))
   }
 
-  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, HttpError | BinaryWriteError | EventError>> {
+  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, Error>> {
     return await Result.unthrow(async t => {
       const { buffer } = state
 
@@ -300,7 +300,7 @@ export class HttpClientDuplex {
     return Ok.void()
   }
 
-  async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError | BinaryWriteError>> {
+  async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       if (state.server_transfer.type !== "chunked")
         return new Err(new InvalidHttpStateError())
@@ -366,7 +366,7 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onWriteStart(): Promise<Result<void, HttpError | BytesError>> {
+  async #onWriteStart(): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       const { method, target, headers } = this.params
 
@@ -377,7 +377,7 @@ export class HttpClientDuplex {
       // Console.debug(this.#class.name, "->", head.length, head)
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
-      const buffer = new Cursor(Bytes.tryAllocUnsafe(64 * 1024).throw(t))
+      const buffer = new Cursor(Bytes.alloc(64 * 1024))
 
       if (Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade")) {
         this.#state = { type: "upgrading", buffer }

@@ -1,9 +1,8 @@
-import { BinaryReadError, BinaryWriteError, CursorReadLengthUnderflowError } from "@hazae41/binary"
+import { ReadUnderflowError } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { Naberius, pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Option } from "@hazae41/option"
-import { Err, Ok, Result } from "@hazae41/result"
 import { Length } from "mods/websocket/length.js"
 
 export class WebSocketFrame {
@@ -33,75 +32,71 @@ export class WebSocketFrame {
     this.length = new Length(this.payload.length)
   }
 
-  static tryNew(params: {
+  static from(params: {
     final: boolean,
     opcode: number,
     payload: Bytes,
     mask?: Bytes<4>
-  }): Result<WebSocketFrame, never> {
-    const { final, opcode, payload } = params
-
-    return new Ok(new WebSocketFrame(final, opcode, payload, Option.wrap(params.mask)))
+  }) {
+    return new WebSocketFrame(params.final, params.opcode, params.payload, Option.wrap(params.mask))
   }
 
   /**
    * Size as bits
    * @returns bits
    */
-  trySize(): Result<number, never> {
-    return new Ok(0
+  sizeOrThrow() {
+    return 0
       + 1 // FIN
       + 3 // RSV
       + 4 // opcode
       + 1 // MASK
-      + this.length.trySize().get()
+      + this.length.sizeOrThrow()
       + this.mask.mapOrSync(0, x => x.length * 8)
-      + this.payload.length * 8)
+      + this.payload.length * 8
   }
 
   /**
    * Write as bits
    * @param cursor bits
    */
-  tryWrite(cursor: Cursor): Result<void, BinaryWriteError> {
-    return Result.unthrowSync(t => {
-      cursor.tryWriteUint8(Number(this.final)).throw(t)
+  writeOrThrow(cursor: Cursor) {
+    cursor.writeUint8OrThrow(Number(this.final))
 
-      cursor.tryWriteUint8(0).throw(t)
-      cursor.tryWriteUint8(0).throw(t)
-      cursor.tryWriteUint8(0).throw(t)
+    cursor.writeUint8OrThrow(0)
+    cursor.writeUint8OrThrow(0)
+    cursor.writeUint8OrThrow(0)
 
-      const opcodeBytesCursor = new Cursor(Bytes.tryAllocUnsafe(1).throw(t))
-      opcodeBytesCursor.tryWriteUint8(this.opcode).throw(t)
+    const opcodeBytesCursor = new Cursor(Bytes.alloc(1))
+    opcodeBytesCursor.writeUint8OrThrow(this.opcode)
 
-      using opcodeBytesMemory = new Naberius.Memory(opcodeBytesCursor.bytes)
-      using opcodeBitsMemory = unpack(opcodeBytesMemory)
+    using opcodeBytesMemory = new Naberius.Memory(opcodeBytesCursor.bytes)
+    using opcodeBitsMemory = unpack(opcodeBytesMemory)
 
-      cursor.tryWrite(opcodeBitsMemory.bytes.subarray(4)).throw(t) // 8 - 4
+    cursor.writeOrThrow(opcodeBitsMemory.bytes.subarray(4)) // 8 - 4
 
-      const masked = Boolean(this.mask)
-      cursor.tryWriteUint8(Number(masked)).throw(t)
+    const masked = Boolean(this.mask)
+    cursor.writeUint8OrThrow(Number(masked))
 
-      this.length.tryWrite(cursor).throw(t)
+    this.length.writeOrThrow(cursor)
 
-      if (this.mask.isSome()) {
-        using maskBytesMemory = new Naberius.Memory(this.mask.get())
-        using maskBitsMemory = unpack(maskBytesMemory)
-        cursor.tryWrite(maskBitsMemory.bytes).throw(t)
+    if (this.mask.isSome()) {
+      using maskBytesMemory = new Naberius.Memory(this.mask.get())
+      using maskBitsMemory = unpack(maskBytesMemory)
+      cursor.writeOrThrow(maskBitsMemory.bytes)
 
-        using xoredBytesMemory = new Naberius.Memory(this.payload)
-        xor_mod(xoredBytesMemory, maskBytesMemory)
+      using xoredBytesMemory = new Naberius.Memory(this.payload)
+      xor_mod(xoredBytesMemory, maskBytesMemory)
 
-        using xoredBitsMemory = unpack(xoredBytesMemory)
-        cursor.tryWrite(xoredBitsMemory.bytes).throw(t)
-      } else {
-        using payloadBytesMemory = new Naberius.Memory(this.payload)
-        using payloadBitsMemory = unpack(payloadBytesMemory)
-        cursor.tryWrite(payloadBitsMemory.bytes).throw(t)
-      }
+      using xoredBitsMemory = unpack(xoredBytesMemory)
+      cursor.writeOrThrow(xoredBitsMemory.bytes)
 
-      return Ok.void()
-    })
+      return
+    }
+
+    using payloadBytesMemory = new Naberius.Memory(this.payload)
+    using payloadBitsMemory = unpack(payloadBytesMemory)
+    cursor.writeOrThrow(payloadBitsMemory.bytes)
   }
 
   /**
@@ -109,46 +104,44 @@ export class WebSocketFrame {
    * @param cursor bits
    * @returns 
    */
-  static tryRead(cursor: Cursor): Result<WebSocketFrame, BinaryReadError> {
-    return Result.unthrowSync(t => {
-      const final = Boolean(cursor.tryReadUint8().throw(t))
+  static readOrThrow(cursor: Cursor) {
+    const final = Boolean(cursor.readUint8OrThrow())
 
-      cursor.offset += 3
+    cursor.offset += 3
 
-      const opcode = cursor.tryRead(4).throw(t).reduce((p, n) => (p << 1) | n)
+    const opcode = cursor.readOrThrow(4).reduce((p, n) => (p << 1) | n)
 
-      const masked = Boolean(cursor.tryReadUint8().throw(t))
+    const masked = Boolean(cursor.readUint8OrThrow())
 
-      const length = Length.tryRead(cursor).throw(t)
+    const length = Length.readOrThrow(cursor)
 
-      if (cursor.remaining < length.value)
-        return new Err(CursorReadLengthUnderflowError.from(cursor))
+    if (cursor.remaining < length.value)
+      throw ReadUnderflowError.from(cursor)
 
-      if (masked) {
-        const maskBitsBytes = cursor.tryRead(4 * 8).throw(t)
-        using maskBitsMemory = new Naberius.Memory(maskBitsBytes)
-        using maskBytesMemory = pack_left(maskBitsMemory)
+    if (masked) {
+      const maskBitsBytes = cursor.readOrThrow(4 * 8)
+      using maskBitsMemory = new Naberius.Memory(maskBitsBytes)
+      using maskBytesMemory = pack_left(maskBitsMemory)
 
-        const xoredBitsBytes = cursor.tryRead(length.value * 8).throw(t)
-        using xoredBitsMemory = new Naberius.Memory(xoredBitsBytes)
-        using xoredBytesMemory = pack_left(xoredBitsMemory)
+      const xoredBitsBytes = cursor.readOrThrow(length.value * 8)
+      using xoredBitsMemory = new Naberius.Memory(xoredBitsBytes)
+      using xoredBytesMemory = pack_left(xoredBitsMemory)
 
-        xor_mod(xoredBytesMemory, maskBytesMemory)
+      xor_mod(xoredBytesMemory, maskBytesMemory)
 
-        const mask = Bytes.tryCast(maskBytesMemory.bytes.slice(), 4).throw(t)
-        const payload = xoredBytesMemory.bytes.slice()
+      const mask = maskBytesMemory.bytes.slice() as Bytes<4>
+      const payload = xoredBytesMemory.bytes.slice()
 
-        return WebSocketFrame.tryNew({ final, opcode, payload, mask })
-      } else {
-        const payloadBitsBytes = cursor.tryRead(length.value * 8).throw(t)
-        using payloadBitsMemory = new Naberius.Memory(payloadBitsBytes)
-        using payloadBytesMemory = pack_left(payloadBitsMemory)
+      return WebSocketFrame.from({ final, opcode, payload, mask })
+    }
 
-        const payload = payloadBytesMemory.bytes.slice()
+    const payloadBitsBytes = cursor.readOrThrow(length.value * 8)
+    using payloadBitsMemory = new Naberius.Memory(payloadBitsBytes)
+    using payloadBytesMemory = pack_left(payloadBitsMemory)
 
-        return WebSocketFrame.tryNew({ final, opcode, payload })
-      }
-    })
+    const payload = payloadBytesMemory.bytes.slice()
+
+    return WebSocketFrame.from({ final, opcode, payload })
   }
 
 }
