@@ -1,8 +1,7 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { SuperTransformStream } from "@hazae41/cascade"
+import { Cascade, SuperTransformStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
-import { Foras, GzDecoder, GzEncoder } from "@hazae41/foras"
 import { None, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
 import { Catched, Err, Ok, Result } from "@hazae41/result"
@@ -47,13 +46,13 @@ export class HttpClientDuplex {
     const { signal } = params
 
     this.#reader = new SuperTransformStream({
-      transform: this.#onRead.bind(this)
+      transform: this.#onRead.bind(this),
     })
 
     this.#writer = new SuperTransformStream({
       start: this.#onWriteStart.bind(this),
       transform: this.#onWrite.bind(this),
-      flush: this.#onWriteFlush.bind(this)
+      flush: this.#onWriteFlush.bind(this),
     })
 
     const read = this.#reader.start()
@@ -77,9 +76,7 @@ export class HttpClientDuplex {
       .then(r => r.ignore())
       .catch(console.error)
 
-    read.readable
-      .pipeTo(piper.writable)
-      .catch(() => { })
+    read.readable.pipeTo(piper.writable).catch(() => { })
   }
 
   async #onReadClose() {
@@ -185,8 +182,18 @@ export class HttpClientDuplex {
       return new Ok({ type: "none" })
 
     if (type === "gzip") {
-      await Foras.initBundledOnce()
-      const encoder = new GzEncoder()
+      const encoder = new CompressionStream("gzip")
+
+      encoder.readable.pipeTo(new WritableStream({
+        write: (chunk: Uint8Array) => {
+          this.#writer.enqueue(new Opaque(chunk))
+        }
+      })).then(() => {
+        this.#writer.terminate()
+      }).catch(e => {
+        this.#writer.error(e)
+      })
+
       return new Ok({ type, encoder })
     }
 
@@ -200,8 +207,18 @@ export class HttpClientDuplex {
       return new Ok({ type: "none" })
 
     if (type === "gzip") {
-      await Foras.initBundledOnce()
-      const decoder = new GzDecoder()
+      const decoder = new DecompressionStream("gzip")
+
+      decoder.readable.pipeTo(new WritableStream({
+        write: (chunk: Uint8Array) => {
+          this.#reader.enqueue(chunk)
+        }
+      })).then(() => {
+        this.#reader.terminate()
+      }).catch(e => {
+        this.#reader.error(e)
+      })
+
       return new Ok({ type, decoder })
     }
 
@@ -245,59 +262,55 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError>> {
-    if (state.server_transfer.type !== "none")
-      return new Err(new InvalidHttpStateError())
+  async #onReadNoneBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, Error>> {
+    return await Result.unthrow(async t => {
+      if (state.server_transfer.type !== "none")
+        return new Err(new InvalidHttpStateError())
 
-    const { server_compression } = state
-
-    if (server_compression.type === "gzip") {
-      using chunkMemory = new Foras.Memory(chunk)
-      server_compression.decoder.write(chunkMemory)
-      server_compression.decoder.flush()
-
-      using dchunkMemory = server_compression.decoder.read()
-      this.#reader.enqueue(dchunkMemory.bytes.slice())
-    } else {
-      this.#reader.enqueue(chunk)
-    }
-
-    return Ok.void()
-  }
-
-  async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, HttpError>> {
-    if (state.server_transfer.type !== "lengthed")
-      return new Err(new InvalidHttpStateError())
-
-    const { server_transfer, server_compression } = state
-
-    server_transfer.offset += chunk.length
-
-    if (server_transfer.offset > server_transfer.length)
-      return new Err(new ContentLengthOverflowError(server_transfer.offset, server_transfer.length))
-
-    if (server_compression.type === "gzip") {
-      using chunkMemory = new Foras.Memory(chunk)
-      server_compression.decoder.write(chunkMemory)
-      server_compression.decoder.flush()
-
-      using dchunkMemory = server_compression.decoder.read()
-      this.#reader.enqueue(dchunkMemory.bytes.slice())
-    } else {
-      this.#reader.enqueue(chunk)
-    }
-
-    if (server_transfer.offset === server_transfer.length) {
+      const { server_compression } = state
 
       if (server_compression.type === "gzip") {
-        using fchunkMemory = server_compression.decoder.finish()
-        this.#reader.enqueue(fchunkMemory.bytes.slice())
+        using writer = Cascade.Writer.from(server_compression.decoder.writable)
+        await writer.inner.write(chunk)
+      } else {
+        this.#reader.enqueue(chunk)
       }
 
-      this.#reader.terminate()
-    }
+      return Ok.void()
+    })
+  }
 
-    return Ok.void()
+  async #onReadLenghtedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, Error>> {
+    return await Result.unthrow(async t => {
+      if (state.server_transfer.type !== "lengthed")
+        return new Err(new InvalidHttpStateError())
+
+      const { server_transfer, server_compression } = state
+
+      server_transfer.offset += chunk.length
+
+      if (server_transfer.offset > server_transfer.length)
+        return new Err(new ContentLengthOverflowError(server_transfer.offset, server_transfer.length))
+
+      if (server_compression.type === "gzip") {
+        using writer = Cascade.Writer.from(server_compression.decoder.writable)
+        await writer.inner.write(chunk)
+      } else {
+        this.#reader.enqueue(chunk)
+      }
+
+      if (server_transfer.offset === server_transfer.length) {
+
+        if (server_compression.type === "gzip") {
+          using writer = Cascade.Writer.from(server_compression.decoder.writable)
+          await writer.inner.close()
+        } else {
+          this.#reader.terminate()
+        }
+      }
+
+      return Ok.void()
+    })
   }
 
   async #onReadChunkedBody(chunk: Uint8Array, state: HttpHeadedState): Promise<Result<void, Error>> {
@@ -325,13 +338,12 @@ export class HttpClientDuplex {
         if (length === 0) {
 
           if (server_compression.type === "gzip") {
-            using fchunkMemory = server_compression.decoder.finish()
-
-            if (fchunkMemory.bytes.length)
-              this.#reader.enqueue(fchunkMemory.bytes.slice())
+            using writer = Cascade.Writer.from(server_compression.decoder.writable)
+            await writer.inner.close()
+          } else {
+            this.#reader.terminate()
           }
 
-          this.#reader.terminate()
           return Ok.void()
         }
 
@@ -343,14 +355,8 @@ export class HttpClientDuplex {
         const rest2 = rest.subarray(length + 2)
 
         if (server_compression.type === "gzip") {
-          using chunk2Memory = new Foras.Memory(chunk2)
-          server_compression.decoder.write(chunk2Memory)
-          server_compression.decoder.flush()
-
-          using dchunk2Memory = server_compression.decoder.read()
-
-          if (dchunk2Memory.bytes.length)
-            this.#reader.enqueue(dchunk2Memory.bytes.slice())
+          using writer = Cascade.Writer.from(server_compression.decoder.writable)
+          await writer.inner.write(chunk2)
         } else {
           this.#reader.enqueue(chunk2)
         }
@@ -401,18 +407,25 @@ export class HttpClientDuplex {
 
     if (this.#state.type === "heading" || this.#state.type === "headed") {
       if (this.#state.client_transfer.type === "none")
-        return await this.#onWriteNone(chunk)
+        return await this.#onWriteNone(chunk, this.#state)
       if (this.#state.client_transfer.type === "lengthed")
         return await this.#onWriteLengthed(chunk, this.#state)
       if (this.#state.client_transfer.type === "chunked")
-        return await this.#onWriteChunked(chunk)
+        return await this.#onWriteChunked(chunk, this.#state)
     }
 
     return new Err(new InvalidHttpStateError())
   }
 
-  async #onWriteNone(chunk: Uint8Array): Promise<Result<void, never>> {
-    this.#writer.enqueue(new Opaque(chunk))
+  async #onWriteNone(chunk: Uint8Array, state: HttpHeadingState | HttpHeadedState): Promise<Result<void, never>> {
+    const { client_compression } = state
+
+    if (client_compression.type === "gzip") {
+      using writer = Cascade.Writer.from(client_compression.encoder.writable)
+      await writer.inner.write(chunk)
+    } else {
+      this.#writer.enqueue(new Opaque(chunk))
+    }
 
     return Ok.void()
   }
@@ -421,24 +434,38 @@ export class HttpClientDuplex {
     if (state.client_transfer.type !== "lengthed")
       return new Err(new InvalidHttpStateError())
 
-    const { client_transfer } = state
+    const { client_transfer, client_compression } = state
 
-    if (client_transfer.offset + chunk.length > client_transfer.length)
+    client_transfer.offset += chunk.length
+
+    if (client_transfer.offset > client_transfer.length)
       return new Err(new ContentLengthOverflowError(client_transfer.offset, client_transfer.length))
 
-    this.#writer.enqueue(new Opaque(chunk))
-    client_transfer.offset += chunk.length
+    if (client_compression.type === "gzip") {
+      using writer = Cascade.Writer.from(client_compression.encoder.writable)
+      await writer.inner.write(chunk)
+    } else {
+      this.#writer.enqueue(new Opaque(chunk))
+    }
 
     return Ok.void()
   }
 
-  async #onWriteChunked(chunk: Uint8Array): Promise<Result<void, never>> {
+  async #onWriteChunked(chunk: Uint8Array, state: HttpHeadingState | HttpHeadedState): Promise<Result<void, never>> {
     const text = new TextDecoder().decode(chunk)
     const length = text.length.toString(16)
     const line = `${length}\r\n${text}\r\n`
 
     // Console.debug(this.#class.name, "->", line.length, line)
-    this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
+
+    const { client_compression } = state
+
+    if (client_compression.type === "gzip") {
+      using writer = Cascade.Writer.from(client_compression.encoder.writable)
+      await writer.inner.write(Bytes.fromUtf8(line))
+    } else {
+      this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
+    }
 
     return Ok.void()
   }
