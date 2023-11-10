@@ -1,3 +1,4 @@
+import { SuperReadableStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 
 export type HttpState =
@@ -66,6 +67,7 @@ export type HttpClientCompression =
 
 export interface HttpGzipClientCompression {
   readonly type: "gzip"
+  readonly sourcer: SuperReadableStream<Uint8Array>
   readonly encoder: CompressionStream
 }
 
@@ -75,5 +77,6 @@ export type HttpServerCompression =
 
 export interface HttpGzipServerCompression {
   readonly type: "gzip"
+  readonly sourcer: SuperReadableStream<Uint8Array>
   readonly decoder: DecompressionStream
 }

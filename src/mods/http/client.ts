@@ -1,10 +1,11 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
-import { Cascade, SuperTransformStream } from "@hazae41/cascade"
+import { SuperReadableStream, SuperTransformStream, SuperWritableStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { None, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
 import { Catched, Err, Ok, Result } from "@hazae41/result"
+import { Buffers } from "libs/buffers/buffers.js"
 import { Strings } from "libs/strings/strings.js"
 import { Console } from "mods/console/index.js"
 import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
@@ -13,8 +14,7 @@ import { HttpClientCompression, HttpHeadedState, HttpHeadingState, HttpServerCom
 export interface HttpStreamParams {
   readonly method: string,
   readonly target: string,
-  readonly headers: Headers,
-  readonly signal?: AbortSignal
+  readonly headers: Headers
 }
 
 export type HttpClientStreamEvent = CloseEvents & ErrorEvents & {
@@ -27,8 +27,8 @@ export class HttpClientDuplex {
   readonly reading = new SuperEventTarget<HttpClientStreamEvent>()
   readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
 
-  readonly readable: ReadableStream<Uint8Array>
-  readonly writable: WritableStream<Uint8Array>
+  readonly input: ReadableWritablePair<Uint8Array, Opaque>
+  readonly output: ReadableWritablePair<Writable, Uint8Array>
 
   readonly #reader: SuperTransformStream<Opaque, Uint8Array>
   readonly #writer: SuperTransformStream<Uint8Array, Writable>
@@ -40,11 +40,8 @@ export class HttpClientDuplex {
    * @param subduplex
    */
   constructor(
-    readonly subduplex: ReadableWritablePair<Opaque, Writable>,
     readonly params: HttpStreamParams
   ) {
-    const { signal } = params
-
     this.#reader = new SuperTransformStream({
       transform: this.#onRead.bind(this),
     })
@@ -55,31 +52,24 @@ export class HttpClientDuplex {
       flush: this.#onWriteFlush.bind(this),
     })
 
-    const read = this.#reader.start()
-    const write = this.#writer.start()
-    const piper = new TransformStream()
+    const reader = this.#reader.start()
+    const writer = this.#writer.start()
 
-    this.readable = piper.readable
-    this.writable = write.writable
+    const piper = new TransformStream<Uint8Array, Uint8Array>()
+    reader.readable.pipeTo(piper.writable).catch(() => { })
 
-    subduplex.readable
-      .pipeTo(read.writable, { signal })
-      .then(this.#onReadClose.bind(this))
-      .catch(this.#onReadError.bind(this))
-      .then(r => r.ignore())
-      .catch(console.error)
+    this.input = {
+      readable: piper.readable,
+      writable: reader.writable
+    }
 
-    write.readable
-      .pipeTo(subduplex.writable, { signal })
-      .then(this.#onWriteClose.bind(this))
-      .catch(this.#onWriteError.bind(this))
-      .then(r => r.ignore())
-      .catch(console.error)
-
-    read.readable.pipeTo(piper.writable).catch(() => { })
+    this.output = {
+      readable: writer.readable,
+      writable: writer.writable
+    }
   }
 
-  async #onReadClose() {
+  async onReadClose() {
     Console.debug(`${this.#class.name}.onReadClose`)
 
     this.#reader.closed = {}
@@ -89,7 +79,7 @@ export class HttpClientDuplex {
     return Ok.void()
   }
 
-  async #onWriteClose() {
+  async onWriteClose() {
     Console.debug(`${this.#class.name}.onWriteClose`)
 
     this.#writer.closed = {}
@@ -99,7 +89,7 @@ export class HttpClientDuplex {
     return Ok.void()
   }
 
-  async #onReadError(reason?: unknown) {
+  async onReadError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
@@ -110,7 +100,7 @@ export class HttpClientDuplex {
     return Catched.throwOrErr(reason)
   }
 
-  async #onWriteError(reason?: unknown) {
+  async onWriteError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#writer.closed = { reason }
@@ -184,17 +174,19 @@ export class HttpClientDuplex {
     if (type === "gzip") {
       const encoder = new CompressionStream("gzip")
 
-      encoder.readable.pipeTo(new WritableStream({
-        write: (chunk: Uint8Array) => {
-          this.#writer.enqueue(new Opaque(chunk))
-        }
-      })).then(() => {
-        this.#writer.terminate()
-      }).catch(e => {
-        this.#writer.error(e)
-      })
+      const sourcer = new SuperReadableStream<Uint8Array>({})
 
-      return new Ok({ type, encoder })
+      const write = (chunk: Uint8Array) => this.#writer.enqueue(new Opaque(chunk))
+      const sinker = new SuperWritableStream({ write })
+
+      encoder.readable.pipeTo(sinker.start())
+        .then(() => this.#writer.terminate())
+        .catch(e => this.#writer.error(e))
+        .catch(console.error)
+
+      sourcer.start().pipeTo(encoder.writable).catch(() => { })
+
+      return new Ok({ type, sourcer, encoder })
     }
 
     return new Err(new UnsupportedContentEncoding(type))
@@ -209,23 +201,25 @@ export class HttpClientDuplex {
     if (type === "gzip") {
       const decoder = new DecompressionStream("gzip")
 
-      decoder.readable.pipeTo(new WritableStream({
-        write: (chunk: Uint8Array) => {
-          this.#reader.enqueue(chunk)
-        }
-      })).then(() => {
-        this.#reader.terminate()
-      }).catch(e => {
-        this.#reader.error(e)
-      })
+      const sourcer = new SuperReadableStream<Uint8Array>({})
 
-      return new Ok({ type, decoder })
+      const write = (chunk: Uint8Array) => this.#reader.enqueue(chunk)
+      const sinker = new SuperWritableStream<Uint8Array>({ write })
+
+      decoder.readable.pipeTo(sinker.start())
+        .then(() => this.#reader.terminate())
+        .catch(e => this.#reader.error(e))
+        .catch(console.error)
+
+      sourcer.start().pipeTo(decoder.writable).catch(() => { })
+
+      return new Ok({ type, sourcer, decoder })
     }
 
     return new Err(new UnsupportedContentEncoding(type))
   }
 
-  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Bytes>, Error>> {
+  async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Result<Option<Uint8Array>, Error>> {
     return await Result.unthrow(async t => {
       const { buffer } = state
 
@@ -258,7 +252,7 @@ export class HttpClientDuplex {
       if (returned.isSome() && returned.inner.isErr())
         return returned.inner.mapErrSync(EventError.new)
 
-      return new Ok(new Some(rawBody))
+      return new Ok(new Some(new Uint8Array(rawBody)))
     })
   }
 
@@ -270,8 +264,7 @@ export class HttpClientDuplex {
       const { server_compression } = state
 
       if (server_compression.type === "gzip") {
-        using writer = Cascade.Writer.from(server_compression.decoder.writable)
-        await writer.inner.write(chunk)
+        server_compression.sourcer.enqueue(chunk)
       } else {
         this.#reader.enqueue(chunk)
       }
@@ -293,8 +286,7 @@ export class HttpClientDuplex {
         return new Err(new ContentLengthOverflowError(server_transfer.offset, server_transfer.length))
 
       if (server_compression.type === "gzip") {
-        using writer = Cascade.Writer.from(server_compression.decoder.writable)
-        await writer.inner.write(chunk)
+        server_compression.sourcer.enqueue(chunk)
       } else {
         this.#reader.enqueue(chunk)
       }
@@ -302,8 +294,7 @@ export class HttpClientDuplex {
       if (server_transfer.offset === server_transfer.length) {
 
         if (server_compression.type === "gzip") {
-          using writer = Cascade.Writer.from(server_compression.decoder.writable)
-          await writer.inner.close()
+          server_compression.sourcer.close()
         } else {
           this.#reader.terminate()
         }
@@ -323,10 +314,10 @@ export class HttpClientDuplex {
 
       buffer.tryWrite(chunk).throw(t)
 
-      let slice = buffer.buffer.subarray(0, buffer.offset)
+      let slice = buffer.bytes.subarray(0, buffer.offset)
 
       while (slice.length) {
-        const index = slice.indexOf("\r\n")
+        const index = Buffers.fromView(slice).indexOf("\r\n")
 
         // [...] => partial header => wait
         if (index === -1) return Ok.void()
@@ -338,8 +329,7 @@ export class HttpClientDuplex {
         if (length === 0) {
 
           if (server_compression.type === "gzip") {
-            using writer = Cascade.Writer.from(server_compression.decoder.writable)
-            await writer.inner.close()
+            server_compression.sourcer.close()
           } else {
             this.#reader.terminate()
           }
@@ -351,12 +341,11 @@ export class HttpClientDuplex {
         if (rest.length < length + 2) break
 
         // ([length]\r\n)[chunk]\r\n(...) => full chunk => split it
-        const chunk2 = rest.subarray(0, length)
+        const chunk2 = rest.subarray(0, length).slice()
         const rest2 = rest.subarray(length + 2)
 
         if (server_compression.type === "gzip") {
-          using writer = Cascade.Writer.from(server_compression.decoder.writable)
-          await writer.inner.write(chunk2)
+          server_compression.sourcer.enqueue(chunk2)
         } else {
           this.#reader.enqueue(chunk2)
         }
@@ -365,7 +354,7 @@ export class HttpClientDuplex {
 
         buffer.tryWrite(rest2).throw(t)
 
-        slice = buffer.buffer.subarray(0, buffer.offset)
+        slice = buffer.bytes.subarray(0, buffer.offset)
       }
 
       return Ok.void()
@@ -421,8 +410,7 @@ export class HttpClientDuplex {
     const { client_compression } = state
 
     if (client_compression.type === "gzip") {
-      using writer = Cascade.Writer.from(client_compression.encoder.writable)
-      await writer.inner.write(chunk)
+      client_compression.sourcer.enqueue(chunk)
     } else {
       this.#writer.enqueue(new Opaque(chunk))
     }
@@ -442,8 +430,7 @@ export class HttpClientDuplex {
       return new Err(new ContentLengthOverflowError(client_transfer.offset, client_transfer.length))
 
     if (client_compression.type === "gzip") {
-      using writer = Cascade.Writer.from(client_compression.encoder.writable)
-      await writer.inner.write(chunk)
+      client_compression.sourcer.enqueue(chunk)
     } else {
       this.#writer.enqueue(new Opaque(chunk))
     }
@@ -461,8 +448,7 @@ export class HttpClientDuplex {
     const { client_compression } = state
 
     if (client_compression.type === "gzip") {
-      using writer = Cascade.Writer.from(client_compression.encoder.writable)
-      await writer.inner.write(Bytes.fromUtf8(line))
+      client_compression.sourcer.enqueue(Bytes.fromUtf8(line))
     } else {
       this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
     }

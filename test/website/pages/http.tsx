@@ -15,7 +15,7 @@ export default function Page() {
 
       console.log(text)
     } catch (e: unknown) {
-      console.error("onClick", e)
+      console.error("onClick", { e })
     }
   }, [])
 

@@ -84,7 +84,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     headers.set("Sec-WebSocket-Key", this.#keyBase64)
     headers.set("Sec-WebSocket-Version", "13")
 
-    const http = new HttpClientDuplex(stream, { target, method: "GET", headers })
+    const http = new HttpClientDuplex({ target, method: "GET", headers })
 
     this.#reader = new SuperWritableStream({
       start: this.#onReadStart.bind(this),
@@ -96,7 +96,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     const reader = this.#reader.start()
     const writer = this.#writer.start()
 
-    http.readable
+    http.input.readable
       .pipeTo(reader, { signal })
       .then(this.#onReadClose.bind(this))
       .catch(this.#onReadError.bind(this))
@@ -104,7 +104,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .catch(console.error)
 
     writer
-      .pipeTo(http.writable, { signal })
+      .pipeTo(http.output.writable, { signal })
       .then(this.#onWriteClose.bind(this))
       .catch(this.#onWriteError.bind(this))
       .then(r => r.ignore())

@@ -45,9 +45,9 @@ export class PipeError extends Error {
     const { signal } = controller
 
     if (body != null)
-      body.pipeTo(http.writable, { signal }).catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
+      body.pipeTo(http.output.writable, { signal }).catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
     else
-      http.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
+      http.output.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
 
     return new PromiseDisposer(future.promise, () => controller.abort())
   }
@@ -91,7 +91,21 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   if (!headers.has("Accept-Encoding"))
     headers.set("Accept-Encoding", "gzip")
 
-  const http = new HttpClientDuplex(stream, { method, target, headers, signal })
+  const http = new HttpClientDuplex({ method, target, headers })
+
+  stream.readable
+    .pipeTo(http.input.writable, { signal })
+    .then(() => http.onReadClose())
+    .catch(e => http.onReadError(e))
+    .then(r => r.ignore())
+    .catch(console.error)
+
+  http.output.readable
+    .pipeTo(stream.writable, { signal })
+    .then(() => http.onWriteClose())
+    .catch(e => http.onWriteError(e))
+    .then(r => r.ignore())
+    .catch(console.error)
 
   const abort = AbortedError.wait(signal)
   const error = ErroredError.wait(http.reading)
@@ -99,7 +113,7 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const pipe = PipeError.wait(http, body)
 
   const head = http.reading.wait("head", (future: Future<Ok<Response>>, init) => {
-    future.resolve(new Ok(new Response(http.readable, init)))
+    future.resolve(new Ok(new Response(http.input.readable, init)))
     return new None()
   })
 
