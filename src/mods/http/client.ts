@@ -394,7 +394,6 @@ export class HttpClientDuplex {
          */
         if (length === 0) {
 
-          console.log("close!!!")
           /**
            * Close the stream
            */
@@ -552,8 +551,6 @@ export class HttpClientDuplex {
   }
 
   async #onWriteFlush(): Promise<Result<void, never>> {
-    console.log("flush")
-
     if (this.#state.type === "heading") {
 
       if (this.#state.client_transfer.type === "none") {
