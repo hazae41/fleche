@@ -3,7 +3,7 @@ import { Disposable, PromiseDisposer } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
 import { None } from "@hazae41/option"
 import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
-import { Err, Ok, Result } from "@hazae41/result"
+import { Catched, Err, Ok, Result } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -89,22 +89,22 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   if (!headers.has("Transfer-Encoding") && !headers.has("Content-Length"))
     headers.set("Transfer-Encoding", "chunked")
   if (!headers.has("Accept-Encoding"))
-    headers.set("Accept-Encoding", "gzip")
+    headers.set("Accept-Encoding", "gzip, deflate")
+  if (!headers.has("Content-Encoding"))
+    headers.set("Content-Encoding", "gzip")
 
   const http = new HttpClientDuplex({ method, target, headers })
 
   stream.readable
     .pipeTo(http.input.writable, { signal })
-    .then(() => http.onReadClose())
-    .catch(e => http.onReadError(e))
-    .then(r => r.ignore())
+    .catch(Catched.throwOrErr)
+    .then(r => r?.ignore())
     .catch(console.error)
 
   http.output.readable
     .pipeTo(stream.writable, { signal })
-    .then(() => http.onWriteClose())
-    .catch(e => http.onWriteError(e))
-    .then(r => r.ignore())
+    .catch(Catched.throwOrErr)
+    .then(r => r?.ignore())
     .catch(console.error)
 
   const abort = AbortedError.wait(signal)
@@ -113,6 +113,8 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const pipe = PipeError.wait(http, body)
 
   const head = http.reading.wait("head", (future: Future<Ok<Response>>, init) => {
+    // const piper = new TransformStream<Uint8Array, Uint8Array>()
+    // http.input.readable.pipeTo(piper.writable).catch(() => { })
     future.resolve(new Ok(new Response(http.input.readable, init)))
     return new None()
   })

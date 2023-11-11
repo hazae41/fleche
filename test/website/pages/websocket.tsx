@@ -7,7 +7,22 @@ export default function Page() {
   const onClick = useCallback(async () => {
     try {
       const tcp = await tryCreateWebSocketStream("ws://localhost:8080")
-      const ws = new Fleche.WebSocket("ws://localhost", undefined, { subduplex: tcp })
+      const ws = new Fleche.WebSocket("ws://localhost", undefined)
+
+      tcp.readable
+        .pipeTo(ws.input.writable, {})
+        .then(() => ws.onReadClose())
+        .catch(e => ws.onReadError(e))
+        .then(r => r.ignore())
+        .catch(console.error)
+
+      http.output.readable
+        .pipeTo(stream.writable, {})
+        .then(() => http.onWriteClose())
+        .catch(e => http.onWriteError(e))
+        .then(r => r.ignore())
+        .catch(console.error)
+
 
       ws.binaryType = "arraybuffer"
 

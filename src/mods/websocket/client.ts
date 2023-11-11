@@ -19,11 +19,6 @@ import { WebSocketFrame } from "./frame.js";
 
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
 
-export interface WebSocketClientDuplexParams {
-  readonly subduplex: ReadableWritablePair<Opaque, Writable>
-  readonly signal?: AbortSignal
-}
-
 export class WebSocketMessageState {
 
   readonly buffer = new Cursor(Bytes.alloc(64 * 1024))
@@ -37,6 +32,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
   readonly reading = new SuperEventTarget<CloseEvents & ErrorEvents & { pong: () => void }>()
   readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
+
+  readonly input: { writable: WritableStream<Opaque> }
+  readonly output: { readable: ReadableStream<Uint8Array> }
 
   readonly #reader: SuperWritableStream<Uint8Array>
   readonly #writer: SuperReadableStream<Uint8Array>
@@ -61,15 +59,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly extensions = ""
   readonly protocol = ""
 
-  constructor(
-    url: string | URL,
-    protocols: string | string[] | undefined,
-    params: WebSocketClientDuplexParams
-  ) {
+  constructor(url: string | URL, protocols?: string | string[]) {
     super()
 
     const { host, pathname, search, href } = new URL(url)
-    const { subduplex: stream, signal } = params
 
     this.url = href
 
@@ -93,21 +86,22 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#writer = new SuperReadableStream<Uint8Array>({})
 
+    this.output = { readable: http.input.readable }
+    this.input = { writable: http.input.writable }
+
     const reader = this.#reader.start()
     const writer = this.#writer.start()
 
     http.input.readable
-      .pipeTo(reader, { signal })
-      .then(this.#onReadClose.bind(this))
-      .catch(this.#onReadError.bind(this))
-      .then(r => r.ignore())
+      .pipeTo(reader, {})
+      .catch(Catched.throwOrErr)
+      .then(r => r?.ignore())
       .catch(console.error)
 
     writer
-      .pipeTo(http.output.writable, { signal })
-      .then(this.#onWriteClose.bind(this))
-      .catch(this.#onWriteError.bind(this))
-      .then(r => r.ignore())
+      .pipeTo(http.output.writable, {})
+      .catch(Catched.throwOrErr)
+      .then(r => r?.ignore())
       .catch(console.error)
 
     http.reading.on("head", this.#onHead.bind(this), { passive: true })
@@ -199,7 +193,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  async #onReadClose() {
+  async onReadClose() {
     Console.debug(`${this.#class.name}.onReadClose`)
 
     this.#reader.closed = {}
@@ -209,7 +203,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onWriteClose() {
+  async onWriteClose() {
     Console.debug(`${this.#class.name}.onWriteClose`)
 
     this.#writer.closed = {}
@@ -219,7 +213,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Ok.void()
   }
 
-  async #onReadError(reason?: unknown) {
+  async onReadError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
@@ -232,7 +226,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return Catched.throwOrErr(reason)
   }
 
-  async #onWriteError(reason?: unknown) {
+  async onWriteError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onWriteError`, { reason })
 
     this.#writer.closed = { reason }
