@@ -60,7 +60,7 @@ export class HttpClientDuplex {
     const preOutputer = this.#writer.start()
 
     const postInputer = new TransformStream<Uint8Array, Uint8Array>({})
-    // const postOutputer = new TransformStream<Writable, Writable>({})
+    const postOutputer = new TransformStream<Writable, Writable>({})
 
     /**
      * Input pipeline (outer <- inner) (client <- server)
@@ -83,7 +83,7 @@ export class HttpClientDuplex {
       /**
        * Inner protocol (TCP? TLS?)
        */
-      readable: preOutputer.readable,
+      readable: postOutputer.readable,
       /**
        * Outer protocol (WebSocket?)
        */
@@ -98,13 +98,13 @@ export class HttpClientDuplex {
       .then(r => r?.ignore())
       .catch(console.error)
 
-    // preOutputer.readable
-    //   .pipeTo(postOutputer.writable, {})
-    //   .then(() => this.onWriteClose())
-    //   .catch(e => this.onWriteError(e))
-    //   .catch(Catched.throwOrErr)
-    //   .then(r => r?.ignore())
-    //   .catch(console.error)
+    preOutputer.readable
+      .pipeTo(postOutputer.writable, {})
+      .then(() => this.onWriteClose())
+      .catch(e => this.onWriteError(e))
+      .catch(Catched.throwOrErr)
+      .then(r => r?.ignore())
+      .catch(console.error)
   }
 
   async onReadClose() {

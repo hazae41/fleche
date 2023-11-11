@@ -88,8 +88,8 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
     headers.set("Host", host)
   if (!headers.has("Transfer-Encoding") && !headers.has("Content-Length"))
     headers.set("Transfer-Encoding", "chunked")
-  if (!headers.has("Accept-Encoding"))
-    headers.set("Accept-Encoding", "gzip, deflate")
+  // if (!headers.has("Accept-Encoding"))
+  //   headers.set("Accept-Encoding", "gzip, deflate")
   if (!headers.has("Content-Encoding"))
     headers.set("Content-Encoding", "gzip")
 
