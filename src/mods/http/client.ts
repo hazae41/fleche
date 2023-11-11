@@ -260,8 +260,8 @@ export class HttpClientDuplex {
     sourcer.start()
       .pipeThrough(decoder)
       .pipeTo(sinker.start())
-      .then(() => this.#writer.terminate())
-      .catch(e => this.#writer.error(e))
+      .then(() => this.#reader.terminate())
+      .catch(e => this.#reader.error(e))
       .catch(() => { })
 
     return new Ok({ type, sourcer })
