@@ -91,23 +91,23 @@ export class HttpClientDuplex {
     }
 
     preInputer.readable
-      .pipeTo(postInputer.writable, {})
-      .then(() => this.onReadClose())
-      .catch(e => this.onReadError(e))
+      .pipeTo(postInputer.writable)
+      .then(() => this.#onReadClose())
+      .catch(e => this.#onReadError(e))
       .catch(Catched.throwOrErr)
       .then(r => r?.ignore())
       .catch(console.error)
 
     preOutputer.readable
-      .pipeTo(postOutputer.writable, {})
-      .then(() => this.onWriteClose())
-      .catch(e => this.onWriteError(e))
+      .pipeTo(postOutputer.writable)
+      .then(() => this.#onWriteClose())
+      .catch(e => this.#onWriteError(e))
       .catch(Catched.throwOrErr)
       .then(r => r?.ignore())
       .catch(console.error)
   }
 
-  async onReadClose() {
+  async #onReadClose() {
     Console.debug(`${this.#class.name}.onReadClose`)
 
     this.#reader.closed = {}
@@ -115,7 +115,7 @@ export class HttpClientDuplex {
     await this.reading.emit("close", [undefined])
   }
 
-  async onWriteClose() {
+  async #onWriteClose() {
     Console.debug(`${this.#class.name}.onWriteClose`)
 
     this.#writer.closed = {}
@@ -123,7 +123,7 @@ export class HttpClientDuplex {
     await this.writing.emit("close", [undefined])
   }
 
-  async onReadError(reason?: unknown): Promise<never> {
+  async #onReadError(reason?: unknown): Promise<never> {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#reader.closed = { reason }
@@ -134,7 +134,7 @@ export class HttpClientDuplex {
     throw reason
   }
 
-  async onWriteError(reason?: unknown): Promise<never> {
+  async #onWriteError(reason?: unknown): Promise<never> {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#writer.closed = { reason }
