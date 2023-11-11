@@ -113,8 +113,6 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const pipe = PipeError.wait(http, body)
 
   const head = http.reading.wait("head", (future: Future<Ok<Response>>, init) => {
-    // const piper = new TransformStream<Uint8Array, Uint8Array>()
-    // http.input.readable.pipeTo(piper.writable).catch(() => { })
     future.resolve(new Ok(new Response(http.input.readable, init)))
     return new None()
   })
