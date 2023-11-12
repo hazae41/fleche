@@ -26,7 +26,7 @@ npm i @hazae41/fleche
 - Relies on the above HTTP
 - Powered by WebAssembly
 - Same API than native
-- Only 0.3 ms slower than native
+- Only 0.3ms slower than native
 
 ### [Upcoming features](https://github.com/sponsors/hazae41)
 - More HTTP 1.1 features
