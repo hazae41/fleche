@@ -123,19 +123,12 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
     return response
 
   http.events.input.on("close", async () => {
-    if (headers.get("Connection") === "close") {
-      await stream.readable
-        .cancel(new Error(`Request "Connection" header is "close"`))
-        .catch(console.warn)
+    if (response.get().headers.get("Connection") !== "close")
       return new None()
-    }
 
-    if (response.get().headers.get("Connection") === "close") {
-      await stream.readable
-        .cancel(new Error(`Response "Connection" header is "close"`))
-        .catch(console.warn)
-      return new None()
-    }
+    await stream.readable
+      .cancel(new Error(`Response "Connection" header is "close"`))
+      .catch(console.warn)
 
     return new None()
   }, { once: true })
