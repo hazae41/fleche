@@ -2,7 +2,7 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { ResultableUnderlyingDefaultSource, ResultableUnderlyingSink, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade"
 import { Ok, Panic, Result } from "@hazae41/result"
 
-export async function tryCreateWebSocketStream(url: string) {
+export async function createWebSocketStream(url: string) {
   const websocket = new WebSocket(url)
 
   websocket.binaryType = "arraybuffer"

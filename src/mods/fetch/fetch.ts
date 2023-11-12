@@ -96,13 +96,13 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const http = new HttpClientDuplex({ method, target, headers })
 
   stream.readable
-    .pipeTo(http.input.writable, { signal, preventClose, preventAbort, preventCancel })
+    .pipeTo(http.input.writable, { signal, preventCancel })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
     .catch(console.error)
 
   http.output.readable
-    .pipeTo(stream.writable, { signal, preventClose, preventAbort, preventCancel })
+    .pipeTo(stream.writable, { signal, preventClose, preventAbort })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
     .catch(console.error)

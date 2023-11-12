@@ -30,14 +30,16 @@ export class WebSocketMessageState {
 export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #class = WebSocketClientDuplex
 
-  readonly reading = new SuperEventTarget<CloseEvents & ErrorEvents & { pong: () => void }>()
-  readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
+  readonly events = {
+    reading: new SuperEventTarget<CloseEvents & ErrorEvents & { pong: () => void }>(),
+    writing: new SuperEventTarget<CloseEvents & ErrorEvents>()
+  } as const
 
   readonly input: { writable: WritableStream<Opaque> }
-  readonly output: { readable: ReadableStream<Uint8Array> }
+  readonly output: { readable: ReadableStream<Writable> }
 
-  readonly #reader: SuperWritableStream<Uint8Array>
-  readonly #writer: SuperReadableStream<Uint8Array>
+  readonly #input: SuperWritableStream<Uint8Array>
+  readonly #output: SuperReadableStream<Uint8Array>
 
   readonly #buffer = new Cursor(Bytes.alloc(65535))
 
@@ -79,27 +81,48 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const http = new HttpClientDuplex({ target, method: "GET", headers })
 
-    this.#reader = new SuperWritableStream({
-      start: this.#onReadStart.bind(this),
-      write: this.#onRead.bind(this)
+    this.#input = new SuperWritableStream({
+      start: this.#onInputStart.bind(this),
+      write: this.#onInputWrite.bind(this)
     })
 
-    this.#writer = new SuperReadableStream<Uint8Array>({})
+    this.#output = new SuperReadableStream<Uint8Array>({})
 
-    this.output = { readable: http.input.readable }
-    this.input = { writable: http.input.writable }
+    const inputer = this.#input.start()
+    const outputer = this.#output.start()
 
-    const reader = this.#reader.start()
-    const writer = this.#writer.start()
+    /**
+     * Input pipeline (inner -> outer) (server -> client)
+     */
+    this.input = {
+      /**
+       * Outer protocol (App?)
+       */
+      writable: http.input.writable
+    }
+
+    /**
+     * Output pipeline (outer -> inner) (client -> server)
+     */
+    this.output = {
+      /**
+       * Inner protocol (TLS? TCP?)
+       */
+      readable: http.output.readable
+    }
 
     http.input.readable
-      .pipeTo(reader, {})
+      .pipeTo(inputer)
+      .then(() => this.#onInputClose())
+      .catch(e => this.#onInputError(e))
       .catch(Catched.throwOrErr)
       .then(r => r?.ignore())
       .catch(console.error)
 
-    writer
-      .pipeTo(http.output.writable, {})
+    outputer
+      .pipeTo(http.output.writable)
+      .then(() => this.#onOutputClose())
+      .catch(e => this.#onOutputError(e))
       .catch(Catched.throwOrErr)
       .then(r => r?.ignore())
       .catch(console.error)
@@ -193,50 +216,50 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  async onReadClose() {
+  async #onInputClose() {
     Console.debug(`${this.#class.name}.onReadClose`)
 
-    this.#reader.closed = {}
+    this.#input.closed = {}
 
-    await this.reading.emit("close", [undefined])
+    await this.events.reading.emit("close", [undefined])
 
     return Ok.void()
   }
 
-  async onWriteClose() {
+  async #onOutputClose() {
     Console.debug(`${this.#class.name}.onWriteClose`)
 
-    this.#writer.closed = {}
+    this.#output.closed = {}
 
-    await this.writing.emit("close", [undefined])
+    await this.events.writing.emit("close", [undefined])
 
     return Ok.void()
   }
 
-  async onReadError(reason?: unknown) {
+  async #onInputError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
-    this.#reader.closed = { reason }
-    this.#writer.error(reason)
+    this.#input.closed = { reason }
+    this.#output.error(reason)
 
-    await this.reading.emit("error", [reason])
+    await this.events.reading.emit("error", [reason])
 
     await this.#onError(reason)
 
-    return Catched.throwOrErr(reason)
+    throw reason
   }
 
-  async onWriteError(reason?: unknown) {
+  async #onOutputError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onWriteError`, { reason })
 
-    this.#writer.closed = { reason }
-    this.#reader.error(reason)
+    this.#output.closed = { reason }
+    this.#input.error(reason)
 
-    await this.writing.emit("error", [reason])
+    await this.events.writing.emit("error", [reason])
 
     await this.#onError(reason)
 
-    return Catched.throwOrErr(reason)
+    throw reason
   }
 
   async #onError(error?: unknown) {
@@ -301,7 +324,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
       this.#tryWrite(ping).throw(t)
 
-      await Plume.tryWaitOrCloseOrErrorOrSignal(this.reading, "pong", (future: Future<Ok<void>>) => {
+      await Plume.tryWaitOrCloseOrErrorOrSignal(this.events.reading, "pong", (future: Future<Ok<void>>) => {
         future.resolve(Ok.void())
         return new None()
       }, AbortSignal.timeout(10_000)).then(r => r.throw(t))
@@ -310,13 +333,13 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     })
   }
 
-  async #onReadStart(): Promise<Result<void, never>> {
+  async #onInputStart(): Promise<Result<void, never>> {
     await Naberius.initBundledOnce()
 
     return Ok.void()
   }
 
-  async #onRead(chunk: Uint8Array): Promise<Result<void, Error>> {
+  async #onInputWrite(chunk: Uint8Array): Promise<Result<void, Error>> {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
     using bytesMemory = new Naberius.Memory(chunk)
@@ -400,7 +423,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onPongFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
-    await this.reading.emit("pong", [])
+    await this.events.reading.emit("pong", [])
     return Ok.void()
   }
 
@@ -439,11 +462,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
         const reason = close.reason.mapSync(Bytes.toUtf8)
 
-        this.#reader.tryError(reason.get()).inspectErrSync(console.warn).ignore()
-        this.#writer.tryClose().inspectErrSync(console.warn).ignore()
+        this.#input.tryError(reason.get()).inspectErrSync(console.warn).ignore()
+        this.#output.tryClose().inspectErrSync(console.warn).ignore()
       } else {
-        this.#reader.tryError().inspectErrSync(console.warn).ignore()
-        this.#writer.tryClose().inspectErrSync(console.warn).ignore()
+        this.#input.tryError().inspectErrSync(console.warn).ignore()
+        this.#output.tryClose().inspectErrSync(console.warn).ignore()
       }
 
       return Ok.void()
@@ -488,7 +511,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       using bitsMemory = new Naberius.Memory(bits)
       using bytesMemory = pack_right(bitsMemory)
 
-      this.#writer.tryEnqueue(bytesMemory.bytes.slice()).throw(t)
+      this.#output.tryEnqueue(bytesMemory.bytes.slice()).throw(t)
 
       return Ok.void()
     })

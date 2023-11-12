@@ -87,7 +87,7 @@ export class HttpClientDuplex {
        */
       readable: postOutputer.readable,
       /**
-       * Outer protocol (WebSocket?)
+       * Outer protocol (App? WebSocket?)
        */
       writable: preOutputer.writable
     }

@@ -1,13 +1,13 @@
 import { Fleche } from "@hazae41/fleche"
 import { Mutex } from "@hazae41/mutex"
-import { WebSocketStream, tryCreateWebSocketStream } from "libs/transports/websocket"
+import { WebSocketStream, createWebSocketStream } from "libs/transports/websocket"
 import { useCallback, useEffect, useMemo, useState } from "react"
 
 export default function Page() {
   const [tcp, setTcp] = useState<WebSocketStream>()
 
   useEffect(() => {
-    tryCreateWebSocketStream("ws://localhost:8080",).then(setTcp)
+    createWebSocketStream("ws://localhost:8080",).then(setTcp)
   }, [])
 
   const mutex = useMemo(() => {

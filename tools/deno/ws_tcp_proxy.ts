@@ -1,4 +1,6 @@
 // deno-lint-ignore-file no-inner-declarations
+/// <reference lib="esnext" />
+/// <reference lib="deno.ns" />
 import { iterateReader, writeAll } from "https://deno.land/std@0.187.0/streams/mod.ts";
 
 const server = Deno.listen({ port: 8080 })
@@ -8,7 +10,7 @@ for await (const conn of server)
 
 async function pipeToWsAndLog(symbol: string, reader: Deno.Reader, socket: WebSocket) {
   for await (const bytes of iterateReader(reader)) {
-    console.debug(symbol, bytes)
+    // console.debug(symbol, bytes)
     socket.send(bytes)
   }
 }
@@ -38,7 +40,7 @@ async function onconn(conn: Deno.Conn) {
 
       socket.addEventListener("message", async e => {
         const bytes = new Uint8Array(e.data)
-        console.debug("->", bytes)
+        // console.debug("->", bytes)
 
         try {
           await writeAll(target, bytes)

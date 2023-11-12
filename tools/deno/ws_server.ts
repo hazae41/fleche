@@ -15,8 +15,8 @@ async function handleConn(conn: Deno.Conn) {
       socket.addEventListener("message", e => {
         try {
           const buffer = e.data as ArrayBuffer
-          console.debug(new Uint8Array(buffer))
-          socket.send(e.data)
+          // console.debug(new Uint8Array(buffer))
+          socket.send(buffer)
         } catch (_: unknown) {
           socket.close()
           return

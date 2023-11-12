@@ -1,52 +1,109 @@
+import { bench } from "@hazae41/deimos"
 import { Fleche } from "@hazae41/fleche"
-import { tryCreateWebSocketStream } from "libs/transports/websocket"
-import { useCallback } from "react"
+import { Future } from "@hazae41/future"
+import { Catched } from "@hazae41/result"
+import { WebSocketStream, createWebSocketStream } from "libs/transports/websocket"
+import { useCallback, useEffect, useState } from "react"
+
+async function createFlecheSocket(tcp: WebSocketStream) {
+  const socket = new Fleche.WebSocket("ws://localhost", undefined)
+
+  tcp.readable
+    .pipeTo(socket.input.writable, { preventCancel: true })
+    .catch(Catched.throwOrErr)
+    .then(r => r?.ignore())
+    .catch(console.error)
+
+  socket.output.readable
+    .pipeTo(tcp.writable, { preventClose: true, preventAbort: true })
+    .catch(Catched.throwOrErr)
+    .then(r => r?.ignore())
+    .catch(console.error)
+
+  socket.binaryType = "arraybuffer"
+
+  await new Promise((ok, err) => {
+    socket.addEventListener("open", ok)
+    socket.addEventListener("error", err)
+  })
+
+  return socket
+}
+
+async function createNativeSocket() {
+  const socket = new WebSocket("ws://localhost:8081", undefined)
+
+  socket.binaryType = "arraybuffer"
+
+  await new Promise((ok, err) => {
+    socket.addEventListener("open", ok)
+    socket.addEventListener("error", err)
+  })
+
+  return socket
+}
 
 export default function Page() {
+  const [tcp, setTcp] = useState<WebSocketStream>()
 
-  const onClick = useCallback(async () => {
+  useEffect(() => {
+    createWebSocketStream("ws://localhost:8080",).then(setTcp)
+  }, [])
+
+  const [flecheSocket, setFlecheSocket] = useState<WebSocket>()
+
+  useEffect(() => {
+    if (tcp == null)
+      return
+    createFlecheSocket(tcp).then(setFlecheSocket)
+  }, [tcp])
+
+  const [nativeSocket, setNativeSocket] = useState<WebSocket>()
+
+  useEffect(() => {
+    createNativeSocket().then(setNativeSocket)
+  }, [])
+
+  const onFlecheClick = useCallback(async () => {
     try {
-      const tcp = await tryCreateWebSocketStream("ws://localhost:8080")
-      const ws = new Fleche.WebSocket("ws://localhost", undefined)
+      if (flecheSocket == null)
+        return
+      if (nativeSocket == null)
+        return
 
-      tcp.readable
-        .pipeTo(ws.input.writable, {})
-        .then(() => ws.onReadClose())
-        .catch(e => ws.onReadError(e))
-        .then(r => r.ignore())
-        .catch(console.error)
+      const fleche = await bench("fleche", async () => {
+        const future = new Future<MessageEvent>()
 
-      http.output.readable
-        .pipeTo(stream.writable, {})
-        .then(() => http.onWriteClose())
-        .catch(e => http.onWriteError(e))
-        .then(r => r.ignore())
-        .catch(console.error)
+        flecheSocket.addEventListener("message", (event) => {
+          future.resolve(event)
+        }, { once: true })
 
+        flecheSocket.send(new Uint8Array([1, 2, 3]))
 
-      ws.binaryType = "arraybuffer"
+        await future.promise
+      }, { warmup: false, samples: 10000 })
 
-      await new Promise((ok, err) => {
-        ws.addEventListener("open", ok)
-        ws.addEventListener("error", err)
-      })
+      const native = await bench("native", async () => {
+        const future = new Future<MessageEvent>()
 
-      ws.addEventListener("message", (event) => {
-        const msgEvent = event as MessageEvent<ArrayBuffer>
-        const bytes = new Uint8Array(msgEvent.data)
-        console.log(bytes)
-        ws.close(3000, "hello")
-      })
+        nativeSocket.addEventListener("message", (event) => {
+          future.resolve(event)
+        }, { once: true })
 
-      const bytes = new Uint8Array([1, 2, 3])
+        nativeSocket.send(new Uint8Array([1, 2, 3]))
 
-      await ws.send(bytes)
+        await future.promise
+      }, { warmup: false, samples: 10000 })
+
+      native.tableAndSummary(fleche)
     } catch (e: unknown) {
       console.error("onClick", e)
     }
-  }, [])
+  }, [flecheSocket, nativeSocket])
 
-  return <button onClick={onClick}>
-    Click me
-  </button>
+  return <>
+    <button onClick={onFlecheClick}>
+      Click me
+    </button>
+  </>
 }
