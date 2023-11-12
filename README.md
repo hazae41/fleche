@@ -10,20 +10,25 @@ npm i @hazae41/fleche
 
 ## Features
 
-### Current features
+### Goals
 - 100% TypeScript and ESM
 - Zero-copy reading and writing
-- Transport agnostic (WebSocket, Tor, TLS)
-- WebStreams backpressure
-- WebAssembly Gzip compression
-- AbortSignal cancellation
-- Compatible with fetch
+- Transport agnostic (TCP, TLS, Tor)
+- Supports backpressure
+
+### HTTP
 - HTTP 1.1
-- WebSockets 
+- Native Gzip and Deflate compression
+- Compatible with code using `fetch`
+- Reusable underlying connection
+
+### WebSocket
+- Relies on the above HTTP
+- Powered by WebAssembly
+- Same API than native
 
 ### [Upcoming features](https://github.com/sponsors/hazae41)
 - More HTTP 1.1 features
-- Brotli compression
 - HTTP 2, HTTP 3 (QUIC)
 
 ## Usage
@@ -33,6 +38,9 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { fetch } from "@hazae41/fleche"
 
 function example(stream: ReadableWritablePair<Opaque, Writable>) {
+  /**
+   * Fetch using the underlying TCP or TLS stream
+   */
   const res = await fetch("https://example.com", { stream })
 
   if (!res.ok)
@@ -47,11 +55,27 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { WebSocket } from "@hazae41/fleche"
 
 function example(stream: ReadableWritablePair<Opaque, Writable>) {
-  const socket = new WebSocket("wss://example.com", undefined, { stream })
+  const socket = new WebSocket("wss://example.com")
 
-  // ...
+  /**
+   * Pipe TCP or TLS input to WebSocket input
+   */
+  stream.readable
+    .pipeTo(socket.input.writable, { preventCancel: true })
+    .catch(() => {})
+
+  /**
+   * Pipe WebSocket output to TCP or TLS output
+   */
+  socket.output.readable
+    .pipeTo(stream.writable, { preventClose: true, preventAbort: true })
+    .catch(() => {})
+
+  await new Promise((ok, err) => {
+    socket.addEventListener("open", ok)
+    socket.addEventListener("error", err)
+  })
 
   socket.addEventListener("message", e => console.log(e.data))
-
   socket.send("Hello world")
 }
