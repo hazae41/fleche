@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-inner-declarations
 import { iterateReader, writeAll } from "https://deno.land/std@0.187.0/streams/mod.ts";
 
 const server = Deno.listen({ port: 8080 })
@@ -23,24 +24,34 @@ async function onconn(conn: Deno.Conn) {
 
       socket.binaryType = "arraybuffer"
 
+      function closeSocket() {
+        if (socket.readyState !== WebSocket.OPEN)
+          return
+        console.log("close socket")
+        socket.close()
+      }
+
+      function closeTarget() {
+        console.log("close target")
+        target.close()
+      }
+
       socket.addEventListener("message", async e => {
+        const bytes = new Uint8Array(e.data)
+        console.debug("->", bytes)
+
         try {
-          const bytes = new Uint8Array(e.data)
-          console.debug("->", bytes)
           await writeAll(target, bytes)
         } catch (_: unknown) {
-          socket.close()
-          target.close()
-          return
+          closeSocket()
         }
       })
 
+      socket.addEventListener("close", () => closeTarget())
+
       pipeToWsAndLog("<-", target, socket)
-        .catch(console.error)
-        .finally(() => {
-          socket.close()
-          target.close()
-        })
+        .catch(() => { })
+        .finally(() => closeSocket())
 
       await respondWith(response)
     } catch (_: unknown) {

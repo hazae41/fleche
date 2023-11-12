@@ -1,23 +1,40 @@
 import { Fleche } from "@hazae41/fleche"
-import { tryCreateWebSocketStream } from "libs/transports/websocket"
-import { useCallback } from "react"
+import { Mutex } from "@hazae41/mutex"
+import { WebSocketStream, tryCreateWebSocketStream } from "libs/transports/websocket"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 export default function Page() {
+  const [tcp, setTcp] = useState<WebSocketStream>()
+
+  useEffect(() => {
+    tryCreateWebSocketStream("ws://localhost:8080",).then(setTcp)
+  }, [])
+
+  const mutex = useMemo(() => {
+    if (tcp == null)
+      return
+    return new Mutex(tcp)
+  }, [tcp])
 
   const onClick = useCallback(async () => {
     try {
-      const tcp = await tryCreateWebSocketStream("ws://localhost:8080")
-      const res = await Fleche.fetch("https://twitter.com/home", { stream: tcp })
-
-      console.log(res.status)
-
-      const text = await res.text()
-
-      console.log(text)
+      if (mutex == null)
+        return
+      await mutex.lock(async tcp => {
+        const start = Date.now()
+        const headers = { "Content-Type": "application/json" }
+        const body = JSON.stringify({ "jsonrpc": "2.0", "method": "web3_clientVersion", "params": [], "id": 67 })
+        const res = await Fleche.fetch("https://eth.llamarpc.com", { method: "POST", headers, body, stream: tcp, preventClose: true, preventCancel: true, preventAbort: true })
+        console.log("head", res.headers)
+        console.log("head", Date.now() - start, "ms")
+        const text = await res.text()
+        console.log(text)
+        console.log("body", Date.now() - start, "ms")
+      })
     } catch (e: unknown) {
       console.error("onClick", { e })
     }
-  }, [])
+  }, [mutex])
 
   return <button onClick={onClick}>
     Click me

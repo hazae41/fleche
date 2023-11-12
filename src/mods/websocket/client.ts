@@ -104,7 +104,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .then(r => r?.ignore())
       .catch(console.error)
 
-    http.reading.on("head", this.#onHead.bind(this), { passive: true })
+    http.events.input.on("head", this.#onHead.bind(this), { passive: true })
 
     this.addEventListener("close", (e) => this.onclose?.(e))
     this.addEventListener("error", (e) => this.onerror?.(e))

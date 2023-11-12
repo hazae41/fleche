@@ -61,7 +61,7 @@ export class PipeError extends Error {
  * @param init.stream Transport substream
  * @returns 
  */
-export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams) {
+export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams & StreamPipeOptions) {
   return await tryFetch(input, init).then(r => r.unwrap())
 }
 
@@ -72,11 +72,11 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
  * @param init.stream Transport substream
  * @returns 
  */
-export async function tryFetch(input: RequestInfo | URL, init: RequestInit & FetchParams): Promise<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>> {
-  const { stream, ...initRest } = init
+export async function tryFetch(input: RequestInfo | URL, init: RequestInit & FetchParams & StreamPipeOptions): Promise<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>> {
+  const { stream, preventAbort, preventCancel, preventClose, ...others } = init
 
-  const request = new Request(input, initRest)
-  const body = await Requests.getBody(request, initRest)
+  const request = new Request(input, others)
+  const body = await Requests.getBody(request, others)
 
   const { url, method, signal } = request
   const { host, pathname, search } = new URL(url)
@@ -86,36 +86,59 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
 
   if (!headers.has("Host"))
     headers.set("Host", host)
+  if (!headers.has("Connection"))
+    headers.set("Connection", "keep-alive")
   if (!headers.has("Transfer-Encoding") && !headers.has("Content-Length"))
     headers.set("Transfer-Encoding", "chunked")
   if (!headers.has("Accept-Encoding"))
     headers.set("Accept-Encoding", "gzip, deflate")
-  if (!headers.has("Content-Encoding"))
-    headers.set("Content-Encoding", "gzip")
 
   const http = new HttpClientDuplex({ method, target, headers })
 
   stream.readable
-    .pipeTo(http.input.writable, { signal })
+    .pipeTo(http.input.writable, { signal, preventClose, preventAbort, preventCancel })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
     .catch(console.error)
 
   http.output.readable
-    .pipeTo(stream.writable, { signal })
+    .pipeTo(stream.writable, { signal, preventClose, preventAbort, preventCancel })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
     .catch(console.error)
 
   const abort = AbortedError.wait(signal)
-  const error = ErroredError.wait(http.reading)
-  const close = ClosedError.wait(http.reading)
+  const error = ErroredError.wait(http.events.input)
+  const close = ClosedError.wait(http.events.input)
   const pipe = PipeError.wait(http, body)
 
-  const head = http.reading.wait("head", (future: Future<Ok<Response>>, init) => {
+  const head = http.events.input.wait("head", (future: Future<Ok<Response>>, init) => {
     future.resolve(new Ok(new Response(http.input.readable, init)))
     return new None()
   })
 
-  return await Disposable.race<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>>([abort, error, close, pipe, head])
+  const response = await Disposable.race<Result<Response, AbortedError | ErroredError | ClosedError | PipeError>>([abort, error, close, pipe, head])
+
+  if (response.isErr())
+    return response
+
+  http.events.input.on("close", async () => {
+    if (headers.get("Connection") === "close") {
+      await stream.readable
+        .cancel(new Error(`Request "Connection" header is "close"`))
+        .catch(console.warn)
+      return new None()
+    }
+
+    if (response.get().headers.get("Connection") === "close") {
+      await stream.readable
+        .cancel(new Error(`Response "Connection" header is "close"`))
+        .catch(console.warn)
+      return new None()
+    }
+
+    return new None()
+  }, { once: true })
+
+  return response
 }

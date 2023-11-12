@@ -28,14 +28,16 @@ export type HttpClientStreamEvent = CloseEvents & ErrorEvents & {
 export class HttpClientDuplex {
   readonly #class = HttpClientDuplex
 
-  readonly reading = new SuperEventTarget<HttpClientStreamEvent>()
-  readonly writing = new SuperEventTarget<CloseEvents & ErrorEvents>()
+  readonly events = {
+    input: new SuperEventTarget<HttpClientStreamEvent>(),
+    output: new SuperEventTarget<CloseEvents & ErrorEvents>()
+  } as const
 
   readonly input: ReadableWritablePair<Uint8Array, Opaque>
   readonly output: ReadableWritablePair<Writable, Uint8Array>
 
-  readonly #reader: SuperTransformStream<Opaque, Uint8Array>
-  readonly #writer: SuperTransformStream<Uint8Array, Writable>
+  readonly #input: SuperTransformStream<Opaque, Uint8Array>
+  readonly #output: SuperTransformStream<Uint8Array, Writable>
 
   #state: HttpState = { type: "none" }
 
@@ -46,18 +48,18 @@ export class HttpClientDuplex {
   constructor(
     readonly params: HttpStreamParams
   ) {
-    this.#reader = new SuperTransformStream({
-      transform: this.#onRead.bind(this),
+    this.#input = new SuperTransformStream({
+      transform: this.#onInputTransform.bind(this),
     })
 
-    this.#writer = new SuperTransformStream({
-      start: this.#onWriteStart.bind(this),
-      transform: this.#onWrite.bind(this),
-      flush: this.#onWriteFlush.bind(this),
+    this.#output = new SuperTransformStream({
+      start: this.#onOutputStart.bind(this),
+      transform: this.#onOutputTransform.bind(this),
+      flush: this.#onOutputFlush.bind(this),
     })
 
-    const preInputer = this.#reader.start()
-    const preOutputer = this.#writer.start()
+    const preInputer = this.#input.start()
+    const preOutputer = this.#output.start()
 
     const postInputer = new TransformStream<Uint8Array, Uint8Array>({})
     const postOutputer = new TransformStream<Writable, Writable>({})
@@ -92,60 +94,60 @@ export class HttpClientDuplex {
 
     preInputer.readable
       .pipeTo(postInputer.writable)
-      .then(() => this.#onReadClose())
-      .catch(e => this.#onReadError(e))
+      .then(() => this.#onInputClose())
+      .catch(e => this.#onInputError(e))
       .catch(Catched.throwOrErr)
       .then(r => r?.ignore())
       .catch(console.error)
 
     preOutputer.readable
       .pipeTo(postOutputer.writable)
-      .then(() => this.#onWriteClose())
-      .catch(e => this.#onWriteError(e))
+      .then(() => this.#onOutputClose())
+      .catch(e => this.#onOutputError(e))
       .catch(Catched.throwOrErr)
       .then(r => r?.ignore())
       .catch(console.error)
   }
 
-  async #onReadClose() {
+  async #onInputClose() {
     Console.debug(`${this.#class.name}.onReadClose`)
 
-    this.#reader.closed = {}
+    this.#input.closed = {}
 
-    await this.reading.emit("close", [undefined])
+    await this.events.input.emit("close", [undefined])
   }
 
-  async #onWriteClose() {
+  async #onOutputClose() {
     Console.debug(`${this.#class.name}.onWriteClose`)
 
-    this.#writer.closed = {}
+    this.#output.closed = {}
 
-    await this.writing.emit("close", [undefined])
+    await this.events.output.emit("close", [undefined])
   }
 
-  async #onReadError(reason?: unknown): Promise<never> {
+  async #onInputError(reason?: unknown): Promise<never> {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
-    this.#reader.closed = { reason }
-    this.#writer.error(reason)
+    this.#input.closed = { reason }
+    this.#output.error(reason)
 
-    await this.reading.emit("error", [reason])
+    await this.events.input.emit("error", [reason])
 
     throw reason
   }
 
-  async #onWriteError(reason?: unknown): Promise<never> {
+  async #onOutputError(reason?: unknown): Promise<never> {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
-    this.#writer.closed = { reason }
-    this.#reader.error(reason)
+    this.#output.closed = { reason }
+    this.#input.error(reason)
 
-    await this.writing.emit("error", [reason])
+    await this.events.output.emit("error", [reason])
 
     throw reason
   }
 
-  async #onRead(chunk: Opaque): Promise<Result<void, Error>> {
+  async #onInputTransform(chunk: Opaque): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       // Console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
 
@@ -161,7 +163,7 @@ export class HttpClientDuplex {
       }
 
       if (this.#state.type === "upgraded") {
-        this.#reader.enqueue(bytes)
+        this.#input.enqueue(bytes)
         return Ok.void()
       }
 
@@ -220,14 +222,14 @@ export class HttpClientDuplex {
 
     const sourcer = new SuperReadableStream<Uint8Array>({})
 
-    const write = (c: Uint8Array) => this.#writer.enqueue(new Opaque(c))
+    const write = (c: Uint8Array) => this.#output.enqueue(new Opaque(c))
     const sinker = new SuperWritableStream<Uint8Array>({ write })
 
     sourcer.start()
       .pipeThrough(encoder)
       .pipeTo(sinker.start())
-      .then(() => this.#writer.terminate())
-      .catch(e => this.#writer.error(e))
+      .then(() => this.#output.terminate())
+      .catch(e => this.#output.error(e))
       .catch(() => { })
 
     return new Ok({ type, sourcer })
@@ -254,14 +256,14 @@ export class HttpClientDuplex {
 
     const sourcer = new SuperReadableStream<Uint8Array>({})
 
-    const write = (c: Uint8Array) => this.#reader.enqueue(c)
+    const write = (c: Uint8Array) => this.#input.enqueue(c)
     const sinker = new SuperWritableStream<Uint8Array>({ write })
 
     sourcer.start()
       .pipeThrough(decoder)
       .pipeTo(sinker.start())
-      .then(() => this.#reader.terminate())
-      .catch(e => this.#reader.error(e))
+      .then(() => this.#input.terminate())
+      .catch(e => this.#input.error(e))
       .catch(() => { })
 
     return new Ok({ type, sourcer })
@@ -295,7 +297,7 @@ export class HttpClientDuplex {
         this.#state = { ...state, type: "headed", server_transfer, server_compression }
       }
 
-      const returned = await this.reading.emit("head", [{ headers, status, statusText }])
+      const returned = await this.events.input.emit("head", [{ headers, status, statusText }])
 
       if (returned.isSome() && returned.inner.isErr())
         return returned.inner.mapErrSync(EventError.new)
@@ -312,7 +314,7 @@ export class HttpClientDuplex {
       const { server_compression } = state
 
       if (server_compression == null) {
-        this.#reader.enqueue(chunk)
+        this.#input.enqueue(chunk)
       } else {
         server_compression.sourcer.enqueue(chunk)
       }
@@ -334,7 +336,7 @@ export class HttpClientDuplex {
         return new Err(new ContentLengthOverflowError(server_transfer.offset, server_transfer.length))
 
       if (server_compression == null) {
-        this.#reader.enqueue(chunk)
+        this.#input.enqueue(chunk)
       } else {
         server_compression.sourcer.enqueue(chunk)
       }
@@ -342,7 +344,7 @@ export class HttpClientDuplex {
       if (server_transfer.offset === server_transfer.length) {
 
         if (server_compression == null) {
-          this.#reader.terminate()
+          this.#input.terminate()
         } else {
           server_compression.sourcer.close()
         }
@@ -398,7 +400,7 @@ export class HttpClientDuplex {
            * Close the stream
            */
           if (server_compression == null) {
-            this.#reader.terminate()
+            this.#input.terminate()
           } else {
             server_compression.sourcer.close()
           }
@@ -434,7 +436,7 @@ export class HttpClientDuplex {
          * Enqueue the body
          */
         if (server_compression == null) {
-          this.#reader.enqueue(body)
+          this.#input.enqueue(body)
         } else {
           server_compression.sourcer.enqueue(body)
         }
@@ -455,7 +457,7 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onWriteStart(): Promise<Result<void, Error>> {
+  async #onOutputStart(): Promise<Result<void, Error>> {
     return await Result.unthrow(async t => {
       const { method, target, headers } = this.params
 
@@ -464,7 +466,7 @@ export class HttpClientDuplex {
       head += `\r\n`
 
       // Console.debug(this.#class.name, "->", head.length, head)
-      this.#writer.enqueue(new Opaque(Bytes.fromUtf8(head)))
+      this.#output.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
       const buffer = new Cursor(Bytes.alloc(64 * 1024))
 
@@ -480,11 +482,11 @@ export class HttpClientDuplex {
     })
   }
 
-  async #onWrite(chunk: Uint8Array): Promise<Result<void, HttpError>> {
+  async #onOutputTransform(chunk: Uint8Array): Promise<Result<void, HttpError>> {
     // Console.debug(this.#class.name, "->", Bytes.toUtf8(chunk))
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded") {
-      this.#writer.enqueue(new Opaque(chunk))
+      this.#output.enqueue(new Opaque(chunk))
       return Ok.void()
     }
 
@@ -504,7 +506,7 @@ export class HttpClientDuplex {
     const { client_compression } = state
 
     if (client_compression == null) {
-      this.#writer.enqueue(new Opaque(chunk))
+      this.#output.enqueue(new Opaque(chunk))
     } else {
       client_compression.sourcer.enqueue(chunk)
     }
@@ -524,7 +526,7 @@ export class HttpClientDuplex {
       return new Err(new ContentLengthOverflowError(client_transfer.offset, client_transfer.length))
 
     if (client_compression == null) {
-      this.#writer.enqueue(new Opaque(chunk))
+      this.#output.enqueue(new Opaque(chunk))
     } else {
       client_compression.sourcer.enqueue(chunk)
     }
@@ -542,7 +544,7 @@ export class HttpClientDuplex {
     const { client_compression } = state
 
     if (client_compression == null) {
-      this.#writer.enqueue(new Opaque(Bytes.fromUtf8(line)))
+      this.#output.enqueue(new Opaque(Bytes.fromUtf8(line)))
     } else {
       client_compression.sourcer.enqueue(Bytes.fromUtf8(line))
     }
@@ -550,16 +552,16 @@ export class HttpClientDuplex {
     return Ok.void()
   }
 
-  async #onWriteFlush(): Promise<Result<void, never>> {
+  async #onOutputFlush(): Promise<Result<void, never>> {
     if (this.#state.type === "heading") {
 
       if (this.#state.client_transfer.type === "none") {
-        this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`\r\n`)))
+        this.#output.enqueue(new Opaque(Bytes.fromUtf8(`\r\n`)))
         return Ok.void()
       }
 
       if (this.#state.client_transfer.type === "chunked") {
-        this.#writer.enqueue(new Opaque(Bytes.fromUtf8(`0\r\n\r\n`)))
+        this.#output.enqueue(new Opaque(Bytes.fromUtf8(`0\r\n\r\n`)))
         return Ok.void()
       }
 
