@@ -12,15 +12,12 @@ export async function tryCreateWebSocketStream(url: string) {
     websocket.addEventListener("error", err)
   })
 
-  websocket.addEventListener("close", () => {
-    console.log("closed")
-  })
-
   return WebSocketStream.tryNew(websocket, { shouldCloseOnClose: true, shouldCloseOnAbort: true, shouldCloseOnCancel: true })
 }
 
 async function closeOrThrow(websocket: WebSocket) {
-  console.log("closeOrThrow")
+  if (websocket.readyState !== WebSocket.OPEN)
+    return
   await new Promise<void>((ok, err) => {
     const onClose = (e: CloseEvent) => {
       if (e.wasClean)
@@ -133,8 +130,6 @@ export class WebSocketSource implements ResultableUnderlyingDefaultSource<Opaque
   }
 
   async cancel() {
-    console.log("cancel")
-
     if (this.params.shouldCloseOnCancel)
       await closeOrThrow(this.websocket)
 
@@ -214,8 +209,6 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
   }
 
   async abort(reason?: unknown) {
-    console.log("abort", reason)
-
     if (this.params.shouldCloseOnAbort)
       await closeOrThrow(this.websocket)
 
@@ -225,8 +218,6 @@ export class WebSocketSink implements ResultableUnderlyingSink<Writable> {
   }
 
   async close() {
-    console.log("close")
-
     if (this.params.shouldCloseOnClose)
       await closeOrThrow(this.websocket)
 
