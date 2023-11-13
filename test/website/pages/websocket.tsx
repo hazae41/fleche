@@ -9,12 +9,12 @@ async function createFlecheSocket(tcp: WebSocketStream) {
   const socket = new Fleche.WebSocket("ws://localhost", undefined)
 
   tcp.readable
-    .pipeTo(socket.input.writable, { preventCancel: true })
+    .pipeTo(socket.inner.writable, { preventCancel: true })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
     .catch(console.error)
 
-  socket.output.readable
+  socket.inner.readable
     .pipeTo(tcp.writable, { preventClose: true, preventAbort: true })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())

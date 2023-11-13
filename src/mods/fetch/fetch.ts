@@ -45,9 +45,9 @@ export class PipeError extends Error {
     const { signal } = controller
 
     if (body != null)
-      body.pipeTo(http.output.writable, { signal }).catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
+      body.pipeTo(http.outer.writable, { signal }).catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
     else
-      http.output.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
+      http.outer.writable.close().catch(e => future.resolve(new Err(new PipeError({ cause: e }))))
 
     return new PromiseDisposer(future.promise, () => controller.abort())
   }
@@ -96,12 +96,12 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const http = new HttpClientDuplex({ method, target, headers })
 
   stream.readable
-    .pipeTo(http.input.writable, { signal, preventCancel })
+    .pipeTo(http.inner.writable, { signal, preventCancel })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
     .catch(console.error)
 
-  http.output.readable
+  http.inner.readable
     .pipeTo(stream.writable, { signal, preventClose, preventAbort })
     .catch(Catched.throwOrErr)
     .then(r => r?.ignore())
@@ -113,7 +113,7 @@ export async function tryFetch(input: RequestInfo | URL, init: RequestInit & Fet
   const pipe = PipeError.wait(http, body)
 
   const head = http.events.input.wait("head", (future: Future<Ok<Response>>, init) => {
-    future.resolve(new Ok(new Response(http.input.readable, init)))
+    future.resolve(new Ok(new Response(http.outer.readable, init)))
     return new None()
   })
 

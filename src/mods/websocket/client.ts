@@ -35,8 +35,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     writing: new SuperEventTarget<CloseEvents & ErrorEvents>()
   } as const
 
-  readonly input: { writable: WritableStream<Opaque> }
-  readonly output: { readable: ReadableStream<Writable> }
+  readonly inner: ReadableWritablePair<Writable, Opaque>
 
   readonly #input: SuperWritableStream<Uint8Array>
   readonly #output: SuperReadableStream<Uint8Array>
@@ -81,44 +80,35 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const http = new HttpClientDuplex({ target, method: "GET", headers })
 
+    /**
+     * Input pipeline (inner -> outer) (server -> client)
+     */
     this.#input = new SuperWritableStream({
       start: this.#onInputStart.bind(this),
       write: this.#onInputWrite.bind(this)
     })
 
+    /**
+     * Output pipeline (outer -> inner) (client -> server)
+     */
     this.#output = new SuperReadableStream<Uint8Array>({})
 
     const inputer = this.#input.start()
     const outputer = this.#output.start()
 
     /**
-     * Input pipeline (inner -> outer) (server -> client)
+     * Inner protocol (TLS? TCP?)
      */
-    this.input = {
-      /**
-       * Outer protocol (App?)
-       */
-      writable: http.input.writable
-    }
+    this.inner = http.inner
 
-    /**
-     * Output pipeline (outer -> inner) (client -> server)
-     */
-    this.output = {
-      /**
-       * Inner protocol (TLS? TCP?)
-       */
-      readable: http.output.readable
-    }
-
-    http.input.readable
+    http.outer.readable
       .pipeTo(inputer)
       .then(() => this.#onInputClose())
       .catch(e => this.#onInputError(e))
       .catch(() => { })
 
     outputer
-      .pipeTo(http.output.writable)
+      .pipeTo(http.outer.writable)
       .then(() => this.#onOutputClose())
       .catch(e => this.#onOutputError(e))
       .catch(() => { })

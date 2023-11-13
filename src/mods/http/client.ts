@@ -33,8 +33,8 @@ export class HttpClientDuplex {
     output: new SuperEventTarget<CloseEvents & ErrorEvents>()
   } as const
 
-  readonly input: ReadableWritablePair<Uint8Array, Opaque>
-  readonly output: ReadableWritablePair<Writable, Uint8Array>
+  readonly inner: ReadableWritablePair<Writable, Opaque>
+  readonly outer: ReadableWritablePair<Uint8Array, Uint8Array>
 
   readonly #input: SuperTransformStream<Opaque, Uint8Array>
   readonly #output: SuperTransformStream<Uint8Array, Writable>
@@ -48,10 +48,16 @@ export class HttpClientDuplex {
   constructor(
     readonly params: HttpStreamParams
   ) {
+    /**
+     * Input pipeline (outer <- inner) (client <- server)
+     */
     this.#input = new SuperTransformStream({
       transform: this.#onInputTransform.bind(this),
     })
 
+    /**
+     * Output pipeline (outer -> inner) (client -> server)
+     */
     this.#output = new SuperTransformStream({
       start: this.#onOutputStart.bind(this),
       transform: this.#onOutputTransform.bind(this),
@@ -65,30 +71,18 @@ export class HttpClientDuplex {
     const postOutputer = new TransformStream<Writable, Writable>({})
 
     /**
-     * Input pipeline (outer <- inner) (client <- server)
+     * Inner protocol (TCP? TLS?)
      */
-    this.input = {
-      /**
-       * Outer protocol (WebSocket?)
-       */
-      readable: postInputer.readable,
-      /**
-       * Inner protocol (TCP? TLS?)
-       */
+    this.inner = {
+      readable: postOutputer.readable,
       writable: preInputer.writable
     }
 
     /**
-     * Output pipeline (outer -> inner) (client -> server)
+     * Outer protocol (App? WebSocket?)
      */
-    this.output = {
-      /**
-       * Inner protocol (TCP? TLS?)
-       */
-      readable: postOutputer.readable,
-      /**
-       * Outer protocol (App? WebSocket?)
-       */
+    this.outer = {
+      readable: postInputer.readable,
       writable: preOutputer.writable
     }
 
