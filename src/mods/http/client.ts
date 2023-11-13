@@ -4,7 +4,7 @@ import { SuperReadableStream, SuperTransformStream, SuperWritableStream } from "
 import { Cursor } from "@hazae41/cursor"
 import { None, Nullable, Option, Some } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
-import { Catched, Err, Ok, Result } from "@hazae41/result"
+import { Err, Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { Console } from "mods/console/index.js"
 import { ContentLengthOverflowError, HttpError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
@@ -96,17 +96,13 @@ export class HttpClientDuplex {
       .pipeTo(postInputer.writable)
       .then(() => this.#onInputClose())
       .catch(e => this.#onInputError(e))
-      .catch(Catched.throwOrErr)
-      .then(r => r?.ignore())
-      .catch(console.error)
+      .catch(() => { })
 
     preOutputer.readable
       .pipeTo(postOutputer.writable)
       .then(() => this.#onOutputClose())
       .catch(e => this.#onOutputError(e))
-      .catch(Catched.throwOrErr)
-      .then(r => r?.ignore())
-      .catch(console.error)
+      .catch(() => { })
   }
 
   async #onInputClose() {
@@ -125,26 +121,22 @@ export class HttpClientDuplex {
     await this.events.output.emit("close", [undefined])
   }
 
-  async #onInputError(reason?: unknown): Promise<never> {
+  async #onInputError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#input.closed = { reason }
     this.#output.error(reason)
 
     await this.events.input.emit("error", [reason])
-
-    throw reason
   }
 
-  async #onOutputError(reason?: unknown): Promise<never> {
+  async #onOutputError(reason?: unknown) {
     Console.debug(`${this.#class.name}.onReadError`, { reason })
 
     this.#output.closed = { reason }
     this.#input.error(reason)
 
     await this.events.output.emit("error", [reason])
-
-    throw reason
   }
 
   async #onInputTransform(chunk: Opaque): Promise<Result<void, Error>> {

@@ -8,7 +8,7 @@ import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { None, Some } from "@hazae41/option";
 import { CloseEvents, ErrorEvents, Plume, SuperEventTarget } from "@hazae41/plume";
-import { Catched, Err, Ok, Result } from "@hazae41/result";
+import { Err, Ok, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
 import { Console } from "mods/console/index.js";
@@ -115,17 +115,13 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       .pipeTo(inputer)
       .then(() => this.#onInputClose())
       .catch(e => this.#onInputError(e))
-      .catch(Catched.throwOrErr)
-      .then(r => r?.ignore())
-      .catch(console.error)
+      .catch(() => { })
 
     outputer
       .pipeTo(http.output.writable)
       .then(() => this.#onOutputClose())
       .catch(e => this.#onOutputError(e))
-      .catch(Catched.throwOrErr)
-      .then(r => r?.ignore())
-      .catch(console.error)
+      .catch(() => { })
 
     http.events.input.on("head", this.#onHead.bind(this), { passive: true })
 
@@ -245,8 +241,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     await this.events.reading.emit("error", [reason])
 
     await this.#onError(reason)
-
-    throw reason
   }
 
   async #onOutputError(reason?: unknown) {
@@ -258,8 +252,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     await this.events.writing.emit("error", [reason])
 
     await this.#onError(reason)
-
-    throw reason
   }
 
   async #onError(error?: unknown) {
