@@ -62,13 +62,13 @@ function example(stream: ReadableWritablePair<Opaque, Writable>) {
    * Pipe TCP or TLS input to WebSocket input
    */
   stream.readable
-    .pipeTo(socket.input.writable, { preventCancel: true })
+    .pipeTo(socket.inner.writable, { preventCancel: true })
     .catch(() => {})
 
   /**
    * Pipe WebSocket output to TCP or TLS output
    */
-  socket.output.readable
+  socket.inner.readable
     .pipeTo(stream.writable, { preventClose: true, preventAbort: true })
     .catch(() => {})
 
