@@ -3,7 +3,7 @@ import { Bytes } from "@hazae41/bytes"
 import { SuperReadableStream, SuperTransformStream, SuperWritableStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { None, Nullable, Option, Some } from "@hazae41/option"
-import { CloseEvents, ErrorEvents, EventError, SuperEventTarget } from "@hazae41/plume"
+import { CloseEvents, ErrorEvents, SuperEventTarget } from "@hazae41/plume"
 import { Err, Ok, Result } from "@hazae41/result"
 import { Strings } from "libs/strings/strings.js"
 import { Console } from "mods/console/index.js"
@@ -286,7 +286,7 @@ export class HttpClientDuplex {
       const returned = await this.events.input.emit("head", [{ headers, status, statusText }])
 
       if (returned.isSome() && returned.inner.isErr())
-        return returned.inner.mapErrSync(EventError.new)
+        return returned.inner
 
       return new Ok(new Some(new Uint8Array(rawBody)))
     })
