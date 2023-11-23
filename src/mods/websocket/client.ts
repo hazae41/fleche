@@ -435,10 +435,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     if (frame.payload.length) {
       const close = Readable.readFromBytesOrThrow(WebSocketClose, frame.payload)
+      const reason = close.reason == null ? undefined : Bytes.toUtf8(close.reason)
 
-      const reason = close.reason.mapSync(Bytes.toUtf8)
-
-      this.#onClose(reason.get())
+      this.#onClose(reason)
       return
     }
 
