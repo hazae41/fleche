@@ -3,7 +3,6 @@ import { Disposable, PromiseDisposer } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
 import { None, Nullable } from "@hazae41/option"
 import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
-import { Catched } from "@hazae41/result"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -62,7 +61,6 @@ export class PipeError extends Error {
 
 }
 
-
 /**
  * Fetch adapter for HTTP streams
  * Will wait for response to be available
@@ -95,15 +93,11 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
 
   stream.readable
     .pipeTo(http.inner.writable, { signal, preventCancel })
-    .catch(Catched.throwOrErr)
-    .then(r => r?.ignore())
-    .catch(console.error)
+    .catch(() => { })
 
   http.inner.readable
     .pipeTo(stream.writable, { signal, preventClose, preventAbort })
-    .catch(Catched.throwOrErr)
-    .then(r => r?.ignore())
-    .catch(console.error)
+    .catch(() => { })
 
   const abort = AbortedError.waitOrThrow(signal)
   const error = ErroredError.waitOrThrow(http.events.input)

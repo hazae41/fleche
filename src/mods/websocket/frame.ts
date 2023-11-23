@@ -1,5 +1,5 @@
 import { ReadUnderflowError } from "@hazae41/binary"
-import { Bytes } from "@hazae41/bytes"
+import { Bytes, Uint8Array } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { Naberius, pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Option } from "@hazae41/option"
@@ -27,7 +27,7 @@ export class WebSocketFrame {
     readonly final: boolean,
     readonly opcode: number,
     readonly payload: Uint8Array,
-    readonly mask: Option<Bytes<4>>,
+    readonly mask: Option<Uint8Array<4>>,
   ) {
     this.length = new Length(this.payload.length)
   }
@@ -35,8 +35,8 @@ export class WebSocketFrame {
   static from(params: {
     final: boolean,
     opcode: number,
-    payload: Bytes,
-    mask?: Bytes<4>
+    payload: Uint8Array,
+    mask?: Uint8Array<4>
   }) {
     return new WebSocketFrame(params.final, params.opcode, params.payload, Option.wrap(params.mask))
   }

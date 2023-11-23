@@ -1,6 +1,5 @@
 import { Base64 } from "@hazae41/base64";
 import { Opaque, Readable, Writable } from "@hazae41/binary";
-import { Box } from "@hazae41/box";
 import { Bytes } from "@hazae41/bytes";
 import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
@@ -8,13 +7,12 @@ import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { None, Some } from "@hazae41/option";
 import { CloseEvents, ErrorEvents, Plume, SuperEventTarget } from "@hazae41/plume";
-import { Err, Ok, Result } from "@hazae41/result";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
 import { Console } from "mods/console/index.js";
 import { HttpClientDuplex } from "mods/http/client.js";
 import { WebSocketClose } from "./close.js";
-import { ExpectedContinuationFrameError, InvalidHttpHeaderValue, InvalidHttpStatusCode, UnexpectedContinuationFrameError, WebSocketHttpError } from "./errors.js";
+import { ExpectedContinuationFrameError, InvalidHttpHeaderValue, InvalidHttpStatusCode, UnexpectedContinuationFrameError } from "./errors.js";
 import { WebSocketFrame } from "./frame.js";
 
 const ACCEPT_SUFFIX = Bytes.fromUtf8("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
@@ -45,7 +43,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #current = new WebSocketMessageState()
 
   readonly #keyBytes = Bytes.random(16)
-  readonly #keyBase64 = Base64.get().tryEncodePadded(this.#keyBytes).unwrap()
+  readonly #keyBase64 = Base64.get().encodePaddedOrThrow(this.#keyBytes)
 
   #readyState: number = WebSocket.CONNECTING
 
@@ -161,45 +159,29 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return 0
   }
 
-  send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
-    Result
-      .runAndUnwrap(async () => await this.trySend(data))
-      .catch(e => Console.debug(`${this.#class.name}.send`, { e }))
-  }
-
-  async trySend(data: string | ArrayBufferLike | ArrayBufferView | Blob): Promise<Result<void, Error>> {
+  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
     if (typeof data === "string")
-      return this.#trySplit(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
+      return this.#splitOrThrow(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
     else if (data instanceof Blob)
-      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer()))
+      return this.#splitOrThrow(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer()))
     else if ("buffer" in data)
-      return this.#trySplit(WebSocketFrame.opcodes.binary, Bytes.fromView(data))
+      return this.#splitOrThrow(WebSocketFrame.opcodes.binary, Bytes.fromView(data))
     else
-      return this.#trySplit(WebSocketFrame.opcodes.text, new Uint8Array(data))
+      return this.#splitOrThrow(WebSocketFrame.opcodes.text, new Uint8Array(data))
   }
 
-  close(code = 1000, reason?: string): void {
-    Result
-      .runAndUnwrap(async () => this.tryClose(code, reason))
-      .catch(e => Console.debug(`${this.#class.name}.close`, { e }))
-  }
+  close(code = 1000, reason?: string) {
+    const final = true
+    const opcode = WebSocketFrame.opcodes.close
+    const close = WebSocketClose.from(code, reason)
+    const payload = Writable.writeToBytesOrThrow(close)
 
-  tryClose(code = 1000, reason?: string): Result<void, Error> {
-    return Result.unthrowSync(t => {
-      const final = true
-      const opcode = WebSocketFrame.opcodes.close
-      const close = WebSocketClose.from(code, reason)
-      const payload = Writable.tryWriteToBytes(close).throw(t)
+    const mask = Bytes.random(4)
 
-      const mask = Bytes.random(4)
+    const frame = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      const frame = WebSocketFrame.from({ final, opcode, payload, mask })
-
-      this.#tryWrite(frame).throw(t)
-      this.#readyState = this.CLOSING
-
-      return Ok.void()
-    })
+    this.#writeOrThrow(frame)
+    this.#readyState = this.CLOSING
   }
 
   async #onInputClose() {
@@ -208,8 +190,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#input.closed = {}
 
     await this.events.reading.emit("close", [undefined])
-
-    return Ok.void()
   }
 
   async #onOutputClose() {
@@ -218,8 +198,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#output.closed = {}
 
     await this.events.writing.emit("close", [undefined])
-
-    return Ok.void()
   }
 
   async #onInputError(reason?: unknown) {
@@ -252,24 +230,24 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.dispatchEvent(closeEvent)
   }
 
-  async #onHead(init: ResponseInit): Promise<Some<Result<void, WebSocketHttpError>>> {
+  async #onHead(init: ResponseInit): Promise<Some<void>> {
     const headers = new Headers(init.headers)
 
     if (init.status !== 101)
-      return new Some(new Err(new InvalidHttpStatusCode(init.status)))
+      throw new InvalidHttpStatusCode(init.status)
 
     if (!Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade"))
-      return new Some(new Err(new InvalidHttpHeaderValue("Connection")))
+      throw new InvalidHttpHeaderValue("Connection")
     if (!Strings.equalsIgnoreCase(headers.get("Upgrade"), "websocket"))
-      return new Some(new Err(new InvalidHttpHeaderValue("Upgrade")))
+      throw new InvalidHttpHeaderValue("Upgrade")
 
     const prehash = Bytes.concat([Bytes.fromUtf8(this.#keyBase64), ACCEPT_SUFFIX])
     const hash = new Uint8Array(await crypto.subtle.digest("SHA-1", prehash))
 
-    const hashBase64 = Base64.get().tryEncodePadded(hash).unwrap()
+    const hashBase64 = Base64.get().encodePaddedOrThrow(hash)
 
     if (headers.get("Sec-WebSocket-Accept") !== hashBase64)
-      return new Some(new Err(new InvalidHttpHeaderValue("Sec-WebSocket-Accept")))
+      throw new InvalidHttpHeaderValue("Sec-WebSocket-Accept")
 
     this.#readyState = this.OPEN
 
@@ -278,90 +256,77 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#startPingLoop().catch(console.warn)
 
-    return new Some(Ok.void())
+    return new Some(undefined)
   }
 
   async #startPingLoop() {
     while (this.readyState === this.OPEN) {
       await new Promise(ok => setTimeout(ok, 10_000))
 
-      const result = await this.tryPing()
-
-      if (result.isOk())
-        continue
-
-      this.tryClose()
-      return
+      try {
+        await this.#pingOrThrow()
+      } catch (e) {
+        this.close()
+        return
+      }
     }
   }
 
-  async tryPing(): Promise<Result<void, Error>> {
-    return Result.unthrow(async t => {
-      const final = true
-      const opcode = WebSocketFrame.opcodes.ping
-      const payload = Bytes.empty()
-      const mask = Bytes.random(4)
+  async #pingOrThrow() {
+    const final = true
+    const opcode = WebSocketFrame.opcodes.ping
+    const payload = Bytes.empty()
+    const mask = Bytes.random(4)
 
-      const ping = WebSocketFrame.from({ final, opcode, payload, mask })
+    const ping = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      this.#tryWrite(ping).throw(t)
+    this.#writeOrThrow(ping)
 
-      await Plume.tryWaitOrCloseOrErrorOrSignal(this.events.reading, "pong", (future: Future<Ok<void>>) => {
-        future.resolve(Ok.void())
-        return new None()
-      }, AbortSignal.timeout(10_000)).then(r => r.throw(t))
-
-      return Ok.void()
-    })
+    await Plume.waitOrCloseOrErrorOrSignal(this.events.reading, "pong", (future: Future<void>) => {
+      future.resolve()
+      return new None()
+    }, AbortSignal.timeout(10_000))
   }
 
-  async #onInputStart(): Promise<Result<void, never>> {
+  async #onInputStart() {
     await Naberius.initBundledOnce()
-
-    return Ok.void()
   }
 
-  async #onInputWrite(chunk: Uint8Array): Promise<Result<void, Error>> {
+  async #onInputWrite(chunk: Uint8Array) {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
     using bytesMemory = new Naberius.Memory(chunk)
-    using bitsMemoryBox = new Box(unpack(bytesMemory))
+    using bitsMemory = unpack(bytesMemory)
 
     if (this.#buffer.offset)
-      return await this.#onReadBuffered(bitsMemoryBox)
+      return await this.#onReadBuffered(bitsMemory.bytes)
 
-    return await this.#onReadDirect(bitsMemoryBox.unwrap().copyAndDispose())
+    return await this.#onReadDirect(bitsMemory.bytes)
   }
 
-  async #onReadBuffered(bitsMemoryBox: Box<Naberius.Memory>): Promise<Result<void, Error>> {
-    return await Result.unthrow(async t => {
-      using bitsMemoryBox2 = bitsMemoryBox.move()
+  async #onReadBuffered(chunk: Uint8Array) {
+    this.#buffer.writeOrThrow(chunk)
+    const full = new Uint8Array(this.#buffer.before)
 
-      this.#buffer.tryWrite(bitsMemoryBox2.inner.bytes).throw(t)
-      const full = new Uint8Array(this.#buffer.before)
-
-      this.#buffer.offset = 0
-      return await this.#onReadDirect(full)
-    })
+    this.#buffer.offset = 0
+    return await this.#onReadDirect(full)
   }
 
-  async #onReadDirect(bits: Uint8Array): Promise<Result<void, Error>> {
-    return await Result.unthrow(async t => {
-      const cursor = new Cursor(bits)
+  async #onReadDirect(chunk: Uint8Array) {
+    const cursor = new Cursor(chunk)
 
-      while (cursor.remaining) {
-        const frame = Readable.tryReadOrRollback(WebSocketFrame, cursor).ignore()
+    while (cursor.remaining) {
+      let frame: WebSocketFrame
 
-        if (frame.isErr()) {
-          this.#buffer.tryWrite(cursor.after).throw(t)
-          break
-        }
-
-        await this.#onFrame(frame.get()).then(r => r.throw(t))
+      try {
+        frame = Readable.readOrRollbackAndThrow(WebSocketFrame, cursor)
+      } catch (e: unknown) {
+        this.#buffer.writeOrThrow(cursor.after)
+        break
       }
 
-      return Ok.void()
-    })
+      await this.#onFrame(frame)
+    }
   }
 
   async #onFrame(frame: WebSocketFrame) {
@@ -373,7 +338,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onStartFrame(frame)
   }
 
-  async #onFinalFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
+  async #onFinalFrame(frame: WebSocketFrame) {
     if (frame.opcode === WebSocketFrame.opcodes.continuation)
       return await this.#onContinuationFrame(frame)
     if (frame.opcode === WebSocketFrame.opcodes.ping)
@@ -388,153 +353,132 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return await this.#onCloseFrame(frame)
 
     console.warn(`Unknown opcode`)
-    return Ok.void()
   }
 
-  async #onPingFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
-    return await Result.unthrow(async t => {
-      const final = true
-      const opcode = WebSocketFrame.opcodes.pong
-      const payload = frame.payload
-      const mask = Bytes.random(4)
+  async #onPingFrame(frame: WebSocketFrame) {
+    const final = true
+    const opcode = WebSocketFrame.opcodes.pong
+    const payload = frame.payload
+    const mask = Bytes.random(4)
 
-      const pong = WebSocketFrame.from({ final, opcode, payload, mask })
+    const pong = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      return this.#tryWrite(pong)
-    })
+    this.#writeOrThrow(pong)
   }
 
-  async #onPongFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
+  async #onPongFrame(frame: WebSocketFrame) {
     await this.events.reading.emit("pong", [])
-    return Ok.void()
   }
 
-  async #onBinaryFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
+  async #onBinaryFrame(frame: WebSocketFrame) {
     if (this.binaryType === "blob")
       this.dispatchEvent(new MessageEvent("message", { data: new Blob([frame.payload]) }))
     else
       this.dispatchEvent(new MessageEvent("message", { data: frame.payload.buffer }))
-
-    return Ok.void()
   }
 
-  async #onTextFrame(frame: WebSocketFrame): Promise<Result<void, never>> {
+  async #onTextFrame(frame: WebSocketFrame) {
     this.dispatchEvent(new MessageEvent("message", { data: Bytes.toUtf8(frame.payload) }))
-
-    return Ok.void()
   }
 
-  async #onCloseFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
-    return await Result.unthrow(async t => {
-      if (this.readyState === this.OPEN) {
-        const final = true
-        const opcode = WebSocketFrame.opcodes.close
-        const payload = frame.payload
-        const mask = Bytes.random(4)
+  async #onCloseFrame(frame: WebSocketFrame) {
+    if (this.readyState === this.OPEN) {
+      const final = true
+      const opcode = WebSocketFrame.opcodes.close
+      const payload = frame.payload
+      const mask = Bytes.random(4)
 
-        const echo = WebSocketFrame.from({ final, opcode, payload, mask })
+      const echo = WebSocketFrame.from({ final, opcode, payload, mask })
 
-        return this.#tryWrite(echo)
-      }
+      this.#writeOrThrow(echo)
+      return
+    }
 
-      this.#readyState = this.CLOSED
+    this.#readyState = this.CLOSED
 
-      if (frame.payload.length) {
-        const close = Readable.tryReadFromBytes(WebSocketClose, frame.payload).throw(t)
+    if (frame.payload.length) {
+      const close = Readable.readFromBytesOrThrow(WebSocketClose, frame.payload)
 
-        const reason = close.reason.mapSync(Bytes.toUtf8)
+      const reason = close.reason.mapSync(Bytes.toUtf8)
 
-        this.#input.tryError(reason.get()).inspectErrSync(console.warn).ignore()
-        this.#output.tryClose().inspectErrSync(console.warn).ignore()
-      } else {
-        this.#input.tryError().inspectErrSync(console.warn).ignore()
-        this.#output.tryClose().inspectErrSync(console.warn).ignore()
-      }
-
-      return Ok.void()
-    })
+      this.#input.tryError(reason.get()).inspectErrSync(console.warn).ignore()
+      this.#output.tryClose().inspectErrSync(console.warn).ignore()
+    } else {
+      this.#input.tryError().inspectErrSync(console.warn).ignore()
+      this.#output.tryClose().inspectErrSync(console.warn).ignore()
+    }
   }
 
-  async #onStartFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
+  async #onStartFrame(frame: WebSocketFrame) {
     if (frame.opcode !== WebSocketFrame.opcodes.continuation) {
 
       if (this.#current.opcode !== undefined)
-        return new Err(new ExpectedContinuationFrameError())
+        throw new ExpectedContinuationFrameError()
 
       this.#current.opcode = frame.opcode
     }
 
-    return this.#current.buffer.tryWrite(frame.payload)
+    return this.#current.buffer.writeOrThrow(frame.payload)
   }
 
-  async #onContinuationFrame(frame: WebSocketFrame): Promise<Result<void, Error>> {
-    return await Result.unthrow(async t => {
-      this.#current.buffer.tryWrite(frame.payload).throw(t)
+  async #onContinuationFrame(frame: WebSocketFrame) {
+    this.#current.buffer.writeOrThrow(frame.payload)
 
-      if (this.#current.opcode === undefined)
-        return new Err(new UnexpectedContinuationFrameError())
+    if (this.#current.opcode === undefined)
+      throw new UnexpectedContinuationFrameError()
 
-      const final = true
-      const opcode = this.#current.opcode
-      const payload = new Uint8Array(this.#current.buffer.before)
-      const full = WebSocketFrame.from({ final, opcode, payload })
+    const final = true
+    const opcode = this.#current.opcode
+    const payload = new Uint8Array(this.#current.buffer.before)
+    const full = WebSocketFrame.from({ final, opcode, payload })
 
-      this.#current.opcode = undefined
-      this.#current.buffer.offset = 0
+    this.#current.opcode = undefined
+    this.#current.buffer.offset = 0
 
-      return await this.#onFinalFrame(full)
-    })
+    await this.#onFinalFrame(full)
   }
 
-  #tryWrite(frame: WebSocketFrame): Result<void, Error> {
-    return Result.unthrowSync(t => {
-      const bits = Writable.tryWriteToBytes(frame).throw(t)
+  #writeOrThrow(frame: WebSocketFrame) {
+    const bits = Writable.writeToBytesOrThrow(frame)
 
-      using bitsMemory = new Naberius.Memory(bits)
-      using bytesMemory = pack_right(bitsMemory)
+    using bitsMemory = new Naberius.Memory(bits)
+    const bytesBytes = pack_right(bitsMemory).copyAndDispose()
 
-      this.#output.tryEnqueue(bytesMemory.bytes.slice()).throw(t)
-
-      return Ok.void()
-    })
+    this.#output.enqueue(bytesBytes)
   }
 
-  #trySplit(opcode: number, data: Uint8Array): Result<void, Error> {
-    return Result.unthrowSync(t => {
-      const chunks = new Cursor(data).trySplit(32_768)
-      const peeker = Iterators.peek(chunks)
+  #splitOrThrow(opcode: number, data: Uint8Array) {
+    const chunks = new Cursor(data).splitOrThrow(32_768)
+    const peeker = Iterators.peek(chunks)
 
-      const first = peeker.next()
+    const first = peeker.next()
 
-      if (first.done)
-        return Ok.void()
+    if (first.done)
+      return
 
-      const { current, next } = first.value
+    const { current, next } = first.value
+    const final = Boolean(next.done)
+    const mask = Bytes.random(4)
+
+    const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
+
+    // Console.debug(this.#class.name, "->", current.length)
+    this.#writeOrThrow(frame)
+
+    let result = peeker.next()
+
+    for (; !result.done; result = peeker.next()) {
+      const { current, next } = result.value
+
       const final = Boolean(next.done)
+      const opcode = WebSocketFrame.opcodes.continuation
       const mask = Bytes.random(4)
 
       const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
 
-      // Console.debug(this.#class.name, "->", current.length)
-      this.#tryWrite(frame).throw(t)
-
-      let result = peeker.next()
-
-      for (; !result.done; result = peeker.next()) {
-        const { current, next } = result.value
-
-        const final = Boolean(next.done)
-        const opcode = WebSocketFrame.opcodes.continuation
-        const mask = Bytes.random(4)
-
-        const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
-
-        // Console.debug(this.#class.name, "-> (continuation)", current.length)
-        this.#tryWrite(frame).throw(t)
-      }
-
-      return result.value
-    })
+      // Console.debug(this.#class.name, "-> (continuation)", current.length)
+      this.#writeOrThrow(frame)
+    }
   }
 
 }
