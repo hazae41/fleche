@@ -184,20 +184,67 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#readyState = this.CLOSING
   }
 
+  #onClose(reason?: unknown) {
+    if (!this.#input.closed) {
+      this.#input.error(reason)
+      this.#input.closed = { reason }
+    }
+
+    if (!this.#output.closed) {
+      this.#output.close()
+      this.#output.closed = { reason }
+    }
+
+    const closeEvent = new CloseEvent("close", { wasClean: false })
+    this.dispatchEvent(closeEvent)
+
+    this.#readyState = this.CLOSED
+
+    // this.#onClean()
+  }
+
+  #onError(reason?: unknown) {
+    if (!this.#input.closed) {
+      this.#input.error(reason)
+      this.#input.closed = { reason }
+    }
+
+    if (!this.#output.closed) {
+      this.#output.error(reason)
+      this.#output.closed = { reason }
+    }
+
+    const errorEvent = new ErrorEvent("error", { error: reason })
+    this.dispatchEvent(errorEvent)
+
+    const closeEvent = new CloseEvent("close", { wasClean: false })
+    this.dispatchEvent(closeEvent)
+
+    this.#readyState = this.CLOSED
+
+    // this.#onClean()
+  }
+
   async #onInputClose() {
     Console.debug(`${this.#class.name}.onReadClose`)
 
     this.#input.closed = {}
+    this.#output.close()
 
     await this.events.reading.emit("close", [undefined])
+
+    this.#onClose()
   }
 
   async #onOutputClose() {
     Console.debug(`${this.#class.name}.onWriteClose`)
 
     this.#output.closed = {}
+    this.#input.error()
 
     await this.events.writing.emit("close", [undefined])
+
+    this.#onClose()
   }
 
   async #onInputError(reason?: unknown) {
@@ -208,7 +255,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.events.reading.emit("error", [reason])
 
-    await this.#onError(reason)
+    this.#onError(reason)
   }
 
   async #onOutputError(reason?: unknown) {
@@ -219,15 +266,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.events.writing.emit("error", [reason])
 
-    await this.#onError(reason)
-  }
-
-  async #onError(error?: unknown) {
-    const errorEvent = new ErrorEvent("error", { error })
-    this.dispatchEvent(errorEvent)
-
-    const closeEvent = new CloseEvent("close", { wasClean: false })
-    this.dispatchEvent(closeEvent)
+    this.#onError(reason)
   }
 
   async #onHead(init: ResponseInit): Promise<Some<void>> {
@@ -394,19 +433,16 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       return
     }
 
-    this.#readyState = this.CLOSED
-
     if (frame.payload.length) {
       const close = Readable.readFromBytesOrThrow(WebSocketClose, frame.payload)
 
       const reason = close.reason.mapSync(Bytes.toUtf8)
 
-      this.#input.tryError(reason.get()).inspectErrSync(console.warn).ignore()
-      this.#output.tryClose().inspectErrSync(console.warn).ignore()
-    } else {
-      this.#input.tryError().inspectErrSync(console.warn).ignore()
-      this.#output.tryClose().inspectErrSync(console.warn).ignore()
+      this.#onClose(reason.get())
+      return
     }
+
+    this.#onClose()
   }
 
   async #onStartFrame(frame: WebSocketFrame) {
