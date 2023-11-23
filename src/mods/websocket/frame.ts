@@ -27,7 +27,7 @@ export class WebSocketFrame {
     readonly final: boolean,
     readonly opcode: number,
     readonly payload: Uint8Array,
-    readonly mask: Option<Uint8Array<4>>,
+    readonly mask?: Uint8Array<4>,
   ) {
     this.length = new Length(this.payload.length)
   }
@@ -38,7 +38,7 @@ export class WebSocketFrame {
     payload: Uint8Array,
     mask?: Uint8Array<4>
   }) {
-    return new WebSocketFrame(params.final, params.opcode, params.payload, Option.wrap(params.mask))
+    return new WebSocketFrame(params.final, params.opcode, params.payload, params.mask)
   }
 
   /**
@@ -52,7 +52,7 @@ export class WebSocketFrame {
       + 4 // opcode
       + 1 // MASK
       + this.length.sizeOrThrow()
-      + this.mask.mapOrSync(0, x => x.length * 8)
+      + Option.wrap(this.mask).mapOrSync(0, x => x.length * 8)
       + this.payload.length * 8
   }
 
@@ -80,8 +80,8 @@ export class WebSocketFrame {
 
     this.length.writeOrThrow(cursor)
 
-    if (this.mask.isSome()) {
-      using maskBytesMemory = new Naberius.Memory(this.mask.get())
+    if (this.mask != null) {
+      using maskBytesMemory = new Naberius.Memory(this.mask)
       using maskBitsMemory = unpack(maskBytesMemory)
       cursor.writeOrThrow(maskBitsMemory.bytes)
 

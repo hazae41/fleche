@@ -5,7 +5,7 @@ import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
 import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
-import { None, Some } from "@hazae41/option";
+import { None } from "@hazae41/option";
 import { CloseEvents, ErrorEvents, Plume, SuperEventTarget } from "@hazae41/plume";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Strings } from "libs/strings/strings.js";
@@ -269,7 +269,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#onError(reason)
   }
 
-  async #onHead(init: ResponseInit): Promise<Some<void>> {
+  async #onHead(init: ResponseInit) {
     const headers = new Headers(init.headers)
 
     if (init.status !== 101)
@@ -295,7 +295,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#startPingLoop().catch(console.warn)
 
-    return new Some(undefined)
+    return new None()
   }
 
   async #startPingLoop() {
