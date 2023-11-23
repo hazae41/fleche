@@ -2,7 +2,6 @@ import { ReadUnderflowError } from "@hazae41/binary"
 import { Bytes, Uint8Array } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
 import { Naberius, pack_left, unpack, xor_mod } from "@hazae41/naberius"
-import { Option } from "@hazae41/option"
 import { Length } from "mods/websocket/length.js"
 
 export class WebSocketFrame {
@@ -52,7 +51,7 @@ export class WebSocketFrame {
       + 4 // opcode
       + 1 // MASK
       + this.length.sizeOrThrow()
-      + Option.wrap(this.mask).mapOrSync(0, x => x.length * 8)
+      + (this.mask == null ? 0 : this.mask.length * 8)
       + this.payload.length * 8
   }
 

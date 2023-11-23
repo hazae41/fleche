@@ -1,28 +1,27 @@
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
-import { Option } from "@hazae41/option"
 
 export class WebSocketClose {
 
   constructor(
     readonly code: number,
-    readonly reason: Option<Bytes>
+    readonly reason?: Uint8Array
   ) { }
 
   static from(code: number, reason?: string) {
-    return new WebSocketClose(code, Option.wrap(reason).mapSync(Bytes.fromUtf8))
+    return new WebSocketClose(code, (reason == null ? undefined : Bytes.fromUtf8(reason)))
   }
 
   sizeOrThrow() {
-    return 2 + this.reason.mapOrSync(0, x => x.length)
+    return 2 + (this.reason == null ? 0 : this.reason.length)
   }
 
   writeOrThrow(cursor: Cursor) {
     cursor.writeUint16OrThrow(this.code)
 
-    if (this.reason.isNone())
+    if (this.reason == null)
       return
-    cursor.writeOrThrow(this.reason.get())
+    cursor.writeOrThrow(this.reason)
   }
 
   static readOrThrow(cursor: Cursor) {
