@@ -305,7 +305,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       try {
         await this.#pingOrThrow()
       } catch (e) {
-        this.close()
+        if (this.readyState === this.OPEN)
+          this.close()
         return
       }
     }
