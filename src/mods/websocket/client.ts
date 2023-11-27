@@ -135,6 +135,22 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     super.removeEventListener(type, listener, options)
   }
 
+  static get CLOSED() {
+    return WebSocket.CLOSED
+  }
+
+  static get CLOSING() {
+    return WebSocket.CLOSING
+  }
+
+  static get CONNECTING() {
+    return WebSocket.CONNECTING
+  }
+
+  static get OPEN() {
+    return WebSocket.OPEN
+  }
+
   get CLOSED() {
     return WebSocket.CLOSED
   }
