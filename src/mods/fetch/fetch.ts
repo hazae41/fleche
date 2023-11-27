@@ -1,5 +1,5 @@
 import { Opaque, Writable } from "@hazae41/binary"
-import { Disposable, PromiseDisposer } from "@hazae41/cleaner"
+import { PromiseDisposer } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
 import { None, Nullable } from "@hazae41/option"
 import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
@@ -99,17 +99,17 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     .pipeTo(stream.writable, { signal, preventClose, preventAbort })
     .catch(() => { })
 
-  const abort = AbortedError.waitOrThrow(signal)
-  const error = ErroredError.waitOrThrow(http.events.input)
-  const close = ClosedError.waitOrThrow(http.events.input)
-  const pipe = PipeError.waitOrThrow(http, body)
+  using abort = AbortedError.waitOrThrow(signal)
+  using error = ErroredError.waitOrThrow(http.events.input)
+  using close = ClosedError.waitOrThrow(http.events.input)
+  using pipe = PipeError.waitOrThrow(http, body)
 
-  const head = http.events.input.wait("head", (future: Future<Response>, init) => {
+  using head = http.events.input.wait("head", (future: Future<Response>, init) => {
     future.resolve(new Response(http.outer.readable, init))
     return new None()
   })
 
-  const response = await Disposable.race<Response>([abort, error, close, pipe, head])
+  const response = await Promise.race([abort, error, close, pipe, head])
 
   http.events.input.on("close", async () => {
     if (response.headers.get("Connection") !== "close")
