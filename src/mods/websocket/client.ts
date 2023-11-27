@@ -246,10 +246,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#input.closed = {}
     this.#output.close()
+    this.#onClose()
 
     await this.events.reading.emit("close", [undefined])
-
-    this.#onClose()
   }
 
   async #onOutputClose() {
@@ -257,10 +256,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#output.closed = {}
     this.#input.error()
+    this.#onClose()
 
     await this.events.writing.emit("close", [undefined])
-
-    this.#onClose()
   }
 
   async #onInputError(reason?: unknown) {
