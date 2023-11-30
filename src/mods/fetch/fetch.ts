@@ -6,7 +6,10 @@ import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
-  stream: ReadableWritablePair<Opaque, Writable>
+  readonly stream: ReadableWritablePair<Opaque, Writable>
+  readonly preventAbort?: boolean
+  readonly preventCancel?: boolean
+  readonly preventClose?: boolean
 }
 
 namespace Requests {
@@ -68,7 +71,7 @@ export class PipeError extends Error {
  * @param init.stream Transport substream
  * @returns 
  */
-export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams & StreamPipeOptions): Promise<Response> {
+export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchParams): Promise<Response> {
   const { stream, preventAbort, preventCancel, preventClose, ...others } = init
 
   const request = new Request(input, others)
