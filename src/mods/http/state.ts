@@ -1,5 +1,4 @@
 import { SuperReadableStream } from "@hazae41/cascade"
-import { Cursor } from "@hazae41/cursor"
 import { Nullable } from "@hazae41/option"
 import { Resizer } from "libs/resizer/resizer.js"
 
@@ -16,7 +15,7 @@ export interface HttpNoneState {
 
 export interface HttpUpgradingState {
   readonly type: "upgrading",
-  readonly buffer: Cursor
+  readonly buffer: Resizer
 }
 
 export interface HttpUpgradedState {
@@ -25,7 +24,7 @@ export interface HttpUpgradedState {
 
 export interface HttpHeadingState {
   readonly type: "heading",
-  readonly buffer: Cursor
+  readonly buffer: Resizer
 
   readonly client_transfer: HttpTransfer
   readonly client_compression?: Nullable<HttpCompression>

@@ -1,7 +1,6 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Bytes } from "@hazae41/bytes"
 import { SuperReadableStream, SuperTransformStream, SuperWritableStream } from "@hazae41/cascade"
-import { Cursor } from "@hazae41/cursor"
 import { Nullable } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, SuperEventTarget } from "@hazae41/plume"
 import { Resizer } from "libs/resizer/resizer.js"
@@ -258,13 +257,13 @@ export class HttpClientDuplex {
 
     buffer.writeOrThrow(chunk)
 
-    const split = Bytes.indexOf(buffer.before, Lines.rnrn)
+    const split = Bytes.indexOf(buffer.inner.before, Lines.rnrn)
 
     if (split === -1)
       return undefined
 
-    const rawHead = buffer.before.subarray(0, split)
-    const rawBody = buffer.before.subarray(split + Lines.rnrn.length)
+    const rawHead = buffer.inner.before.subarray(0, split)
+    const rawBody = buffer.inner.before.subarray(split + Lines.rnrn.length)
 
     const [rawStatus, ...rawHeaders] = Bytes.toUtf8(rawHead).split("\r\n")
     const [version, statusString, statusText] = rawStatus.split(" ")
@@ -434,7 +433,7 @@ export class HttpClientDuplex {
     // Console.debug(this.#class.name, "->", head.length, head)
     this.#output.enqueue(new Opaque(Bytes.fromUtf8(head)))
 
-    const buffer = new Cursor(Bytes.alloc(64 * 1024))
+    const buffer = new Resizer()
 
     if (Strings.equalsIgnoreCase(headers.get("Connection"), "Upgrade")) {
       this.#state = { type: "upgrading", buffer }
