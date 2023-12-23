@@ -8,6 +8,7 @@ import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { None } from "@hazae41/option";
 import { CloseEvents, ErrorEvents, Plume, SuperEventTarget } from "@hazae41/plume";
 import { Iterators } from "libs/iterables/iterators.js";
+import { Resizer } from "libs/resizer/resizer.js";
 import { Strings } from "libs/strings/strings.js";
 import { Console } from "mods/console/index.js";
 import { HttpClientDuplex } from "mods/http/client.js";
@@ -38,7 +39,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #input: SuperWritableStream<Uint8Array>
   readonly #output: SuperReadableStream<Uint8Array>
 
-  readonly #buffer = new Cursor(Bytes.alloc(65535))
+  readonly #buffer = new Resizer()
 
   readonly #current = new WebSocketMessageState()
 
@@ -352,7 +353,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     using bytesMemory = new Naberius.Memory(chunk)
     using bitsMemory = unpack(bytesMemory)
 
-    if (this.#buffer.offset)
+    if (this.#buffer.inner.offset)
       return await this.#onReadBuffered(bitsMemory.bytes)
 
     return await this.#onReadDirect(bitsMemory.bytes)
@@ -360,9 +361,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
   async #onReadBuffered(chunk: Uint8Array) {
     this.#buffer.writeOrThrow(chunk)
-    const full = new Uint8Array(this.#buffer.before)
+    const full = new Uint8Array(this.#buffer.inner.before)
 
-    this.#buffer.offset = 0
+    this.#buffer.inner.offset = 0
     return await this.#onReadDirect(full)
   }
 

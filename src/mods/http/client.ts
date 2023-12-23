@@ -4,6 +4,7 @@ import { SuperReadableStream, SuperTransformStream, SuperWritableStream } from "
 import { Cursor } from "@hazae41/cursor"
 import { Nullable } from "@hazae41/option"
 import { CloseEvents, ErrorEvents, SuperEventTarget } from "@hazae41/plume"
+import { Resizer } from "libs/resizer/resizer.js"
 import { Strings } from "libs/strings/strings.js"
 import { Console } from "mods/console/index.js"
 import { ContentLengthOverflowError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
@@ -167,7 +168,7 @@ export class HttpClientDuplex {
     const type = headers.get("Transfer-Encoding")
 
     if (type === "chunked") {
-      const buffer = new Cursor(Bytes.alloc(64 * 1024))
+      const buffer = new Resizer()
       return { type, buffer }
     }
 
@@ -333,7 +334,7 @@ export class HttpClientDuplex {
 
     buffer.writeOrThrow(chunk)
 
-    let slice = buffer.before
+    let slice = buffer.inner.before
 
     while (slice.length) {
       const index = Bytes.indexOf(slice, Lines.rn)
@@ -413,13 +414,13 @@ export class HttpClientDuplex {
       /**
        * Overwrite the buffer with the rest
        */
-      buffer.offset = 0
+      buffer.inner.offset = 0
       buffer.writeOrThrow(rest)
 
       /**
        * Search for other chunks in the rest
        */
-      slice = buffer.before
+      slice = buffer.inner.before
     }
   }
 

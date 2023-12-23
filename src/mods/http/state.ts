@@ -1,6 +1,7 @@
 import { SuperReadableStream } from "@hazae41/cascade"
 import { Cursor } from "@hazae41/cursor"
 import { Nullable } from "@hazae41/option"
+import { Resizer } from "libs/resizer/resizer.js"
 
 export type HttpState =
   | HttpNoneState
@@ -47,7 +48,7 @@ export type HttpTransfer =
 
 export interface HttpChunkedTransfer {
   readonly type: "chunked",
-  readonly buffer: Cursor
+  readonly buffer: Resizer
 }
 
 export interface HttpNoneTransfer {
