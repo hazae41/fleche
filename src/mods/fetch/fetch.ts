@@ -112,7 +112,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     return new None()
   })
 
-  const response = await Promise.race([abort, error, close, pipe, head])
+  const response = await Promise.race([abort.get(), error.get(), close.get(), pipe.get(), head.get()])
 
   http.events.input.on("close", async () => {
     if (response.headers.get("Connection") !== "close")
