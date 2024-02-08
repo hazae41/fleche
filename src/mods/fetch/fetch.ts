@@ -1,5 +1,5 @@
 import { Opaque, Writable } from "@hazae41/binary"
-import { PromiseDisposer } from "@hazae41/cleaner"
+import { Disposer } from "@hazae41/cleaner"
 import { Future } from "@hazae41/future"
 import { None, Nullable } from "@hazae41/option"
 import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
@@ -59,7 +59,7 @@ export class PipeError extends Error {
     else
       http.outer.writable.close().catch(PipeError.fromAndThrow).catch(future.reject)
 
-    return new PromiseDisposer(future.promise, () => controller.abort())
+    return new Disposer(future.promise, () => controller.abort())
   }
 
 }
