@@ -422,7 +422,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onPongFrame(frame: WebSocketFrame) {
-    await this.events.reading.emit("pong", [])
+    await this.events.reading.emit("pong")
   }
 
   async #onBinaryFrame(frame: WebSocketFrame) {
