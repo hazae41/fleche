@@ -111,11 +111,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   [Symbol.dispose]() {
-    this.duplex.close().catch(console.error)
+    this.close()
   }
 
   async [Symbol.asyncDispose]() {
-    await this.duplex.close()
+    this.close()
   }
 
   get inner() {
@@ -198,18 +198,22 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     return 0
   }
 
-  async send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
+  async #sendOrThrow(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
     if (typeof data === "string")
-      return this.#splitOrThrow(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
+      return await this.#splitOrThrow(WebSocketFrame.opcodes.text, Bytes.fromUtf8(data))
     else if (data instanceof Blob)
-      return this.#splitOrThrow(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer()))
+      return await this.#splitOrThrow(WebSocketFrame.opcodes.text, new Uint8Array(await data.arrayBuffer()))
     else if ("buffer" in data)
-      return this.#splitOrThrow(WebSocketFrame.opcodes.binary, Bytes.fromView(data))
+      return await this.#splitOrThrow(WebSocketFrame.opcodes.binary, Bytes.fromView(data))
     else
-      return this.#splitOrThrow(WebSocketFrame.opcodes.text, new Uint8Array(data))
+      return await this.#splitOrThrow(WebSocketFrame.opcodes.text, new Uint8Array(data))
   }
 
-  close(code = 1000, reason?: string) {
+  send(data: string | ArrayBufferLike | ArrayBufferView | Blob) {
+    this.#sendOrThrow(data).catch(console.error)
+  }
+
+  async #closeOrThrow(code = 1000, reason?: string) {
     const final = true
     const opcode = WebSocketFrame.opcodes.close
     const close = WebSocketClose.from(code, reason)
@@ -219,8 +223,12 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const frame = WebSocketFrame.from({ final, opcode, payload, mask })
 
-    this.#writeOrThrow(frame)
+    await this.#writeOrThrow(frame)
     this.#readyState = this.CLOSING
+  }
+
+  close(code = 1000, reason?: string) {
+    this.#closeOrThrow(code, reason).catch(console.error)
   }
 
   async #onDuplexClose() {
@@ -291,7 +299,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const ping = WebSocketFrame.from({ final, opcode, payload, mask })
 
-    this.#writeOrThrow(ping)
+    await this.#writeOrThrow(ping)
 
     await Plume.waitOrCloseOrErrorOrSignal(this.events, "pong", (future: Future<void>) => {
       future.resolve()
@@ -374,7 +382,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     const pong = WebSocketFrame.from({ final, opcode, payload, mask })
 
-    this.#writeOrThrow(pong)
+    await this.#writeOrThrow(pong)
   }
 
   async #onPongFrame(frame: WebSocketFrame) {
@@ -401,7 +409,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
       const echo = WebSocketFrame.from({ final, opcode, payload, mask })
 
-      this.#writeOrThrow(echo)
+      await this.#writeOrThrow(echo)
       return
     }
 
@@ -447,16 +455,16 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     await this.#onFinalFrame(full)
   }
 
-  #writeOrThrow(frame: WebSocketFrame) {
+  async #writeOrThrow(frame: WebSocketFrame) {
     const bits = Writable.writeToBytesOrThrow(frame)
 
     using bitsMemory = new Naberius.Memory(bits)
     const bytesBytes = pack_right(bitsMemory).copyAndDispose()
 
-    this.duplex.output.enqueue(bytesBytes)
+    await this.duplex.output.enqueue(bytesBytes)
   }
 
-  #splitOrThrow(opcode: number, data: Uint8Array) {
+  async #splitOrThrow(opcode: number, data: Uint8Array) {
     const chunks = new Cursor(data).splitOrThrow(32_768)
     const peeker = Iterators.peek(chunks)
 
@@ -472,7 +480,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
 
     // Console.debug(this.#class.name, "->", current.length)
-    this.#writeOrThrow(frame)
+
+    await this.#writeOrThrow(frame)
 
     let result = peeker.next()
 
@@ -486,7 +495,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       const frame = WebSocketFrame.from({ final, opcode, payload: current, mask })
 
       // Console.debug(this.#class.name, "-> (continuation)", current.length)
-      this.#writeOrThrow(frame)
+      await this.#writeOrThrow(frame)
     }
   }
 
