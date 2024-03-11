@@ -25,8 +25,6 @@ export type HttpClientDuplexEvent =
   & { head: (res: ResponseInit) => void }
 
 export class HttpClientDuplex {
-  readonly #class = HttpClientDuplex
-
   readonly duplex = new FullDuplex<Opaque, Writable, Uint8Array, Uint8Array>()
   readonly events = new SuperEventTarget<HttpClientDuplexEvent>()
 
