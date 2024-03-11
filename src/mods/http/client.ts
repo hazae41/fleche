@@ -25,6 +25,7 @@ export type HttpClientDuplexEvent =
   & { head: (res: ResponseInit) => void }
 
 export class HttpClientDuplex {
+
   readonly duplex = new FullDuplex<Opaque, Writable, Uint8Array, Uint8Array>()
   readonly events = new SuperEventTarget<HttpClientDuplexEvent>()
 
@@ -56,6 +57,46 @@ export class HttpClientDuplex {
       await this.#onOutputFlush()
       return new None()
     })
+  }
+
+  [Symbol.dispose]() {
+    this.close().catch(console.error)
+  }
+
+  async [Symbol.asyncDispose]() {
+    await this.close()
+  }
+
+  get inner() {
+    return this.duplex.inner
+  }
+
+  get outer() {
+    return this.duplex.outer
+  }
+
+  get input() {
+    return this.duplex.input
+  }
+
+  get output() {
+    return this.duplex.output
+  }
+
+  get closing() {
+    return this.duplex.closing
+  }
+
+  get closed() {
+    return this.duplex.closed
+  }
+
+  async error(reason?: unknown) {
+    await this.duplex.error(reason)
+  }
+
+  async close() {
+    await this.duplex.close()
   }
 
   async #onInputMessage(chunk: Opaque) {

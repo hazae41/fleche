@@ -1,7 +1,7 @@
 import { Base64 } from "@hazae41/base64";
-import { Opaque, Readable, Writable } from "@hazae41/binary";
+import { Readable, Writable } from "@hazae41/binary";
 import { Bytes } from "@hazae41/bytes";
-import { SuperReadableStream, SuperWritableStream } from "@hazae41/cascade";
+import { HalfDuplex } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
 import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
@@ -26,18 +26,18 @@ export class WebSocketMessageState {
 
 }
 
+export type WebSocketClientDuplexEvents =
+  & CloseEvents
+  & ErrorEvents
+  & { pong: () => void }
+
 export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly #class = WebSocketClientDuplex
 
-  readonly events = {
-    reading: new SuperEventTarget<CloseEvents & ErrorEvents & { pong: () => void }>(),
-    writing: new SuperEventTarget<CloseEvents & ErrorEvents>()
-  } as const
+  readonly http: HttpClientDuplex
 
-  readonly inner: ReadableWritablePair<Writable, Opaque>
-
-  readonly #input: SuperWritableStream<Uint8Array>
-  readonly #output: SuperReadableStream<Uint8Array>
+  readonly duplex = new HalfDuplex<Uint8Array, Uint8Array>()
+  readonly events = new SuperEventTarget<WebSocketClientDuplexEvents>()
 
   readonly #buffer = new Resizer()
 
@@ -62,6 +62,11 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   constructor(url: string | URL, protocols?: string | string[]) {
     super()
 
+    this.addEventListener("close", (e) => this.onclose?.(e))
+    this.addEventListener("error", (e) => this.onerror?.(e))
+    this.addEventListener("message", (e) => this.onmessage?.(e))
+    this.addEventListener("open", (e) => this.onopen?.(e))
+
     const { host, pathname, search, href } = new URL(url)
 
     this.url = href
@@ -77,47 +82,64 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     headers.set("Sec-WebSocket-Key", this.#keyBase64)
     headers.set("Sec-WebSocket-Version", "13")
 
-    const http = new HttpClientDuplex({ target, method: "GET", headers })
+    this.http = new HttpClientDuplex({ target, method: "GET", headers })
 
-    /**
-     * Input pipeline (inner -> outer) (server -> client)
-     */
-    this.#input = new SuperWritableStream({
-      start: this.#onInputStart.bind(this),
-      write: this.#onInputWrite.bind(this)
+    this.duplex.events.on("close", async () => {
+      await this.#onDuplexClose()
+      return new None()
     })
 
-    /**
-     * Output pipeline (outer -> inner) (client -> server)
-     */
-    this.#output = new SuperReadableStream<Uint8Array>({})
+    this.duplex.events.on("error", async (e) => {
+      await this.#onDuplexError(e)
+      return new None()
+    })
 
-    const inputer = this.#input.start()
-    const outputer = this.#output.start()
+    this.duplex.input.events.on("open", async () => {
+      await this.#onInputStart()
+      return new None()
+    })
 
-    /**
-     * Inner protocol (TLS? TCP?)
-     */
-    this.inner = http.inner
+    this.duplex.input.events.on("message", async chunk => {
+      await this.#onInputMessage(chunk)
+      return new None()
+    })
 
-    http.outer.readable
-      .pipeTo(inputer)
-      .then(() => this.#onInputClose())
-      .catch(e => this.#onInputError(e))
-      .catch(() => { })
+    this.http.events.on("head", this.#onHead.bind(this), { passive: true })
 
-    outputer
-      .pipeTo(http.outer.writable)
-      .then(() => this.#onOutputClose())
-      .catch(e => this.#onOutputError(e))
-      .catch(() => { })
+    this.http.outer.readable.pipeTo(this.duplex.inner.writable).catch(() => { })
+    this.duplex.inner.readable.pipeTo(this.http.outer.writable).catch(() => { })
+  }
 
-    http.events.input.on("head", this.#onHead.bind(this), { passive: true })
+  [Symbol.dispose]() {
+    this.duplex.close().catch(console.error)
+  }
 
-    this.addEventListener("close", (e) => this.onclose?.(e))
-    this.addEventListener("error", (e) => this.onerror?.(e))
-    this.addEventListener("message", (e) => this.onmessage?.(e))
-    this.addEventListener("open", (e) => this.onopen?.(e))
+  async [Symbol.asyncDispose]() {
+    await this.duplex.close()
+  }
+
+  get inner() {
+    return this.http.inner
+  }
+
+  get outer() {
+    return this.duplex.outer
+  }
+
+  get input() {
+    return this.duplex.input
+  }
+
+  get output() {
+    return this.duplex.output
+  }
+
+  get closing() {
+    return this.duplex.closing
+  }
+
+  get closed() {
+    return this.duplex.closed
   }
 
   addEventListener<K extends keyof WebSocketEventMap>(type: K, listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
@@ -201,36 +223,14 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.#readyState = this.CLOSING
   }
 
-  #onClose(reason?: unknown) {
-    if (!this.#input.closed) {
-      this.#input.error(reason)
-      this.#input.closed = { reason }
-    }
-
-    if (!this.#output.closed) {
-      this.#output.close()
-      this.#output.closed = { reason }
-    }
-
+  async #onDuplexClose() {
     const closeEvent = new CloseEvent("close", { wasClean: false })
     this.dispatchEvent(closeEvent)
 
     this.#readyState = this.CLOSED
-
-    // this.#onClean()
   }
 
-  #onError(reason?: unknown) {
-    if (!this.#input.closed) {
-      this.#input.error(reason)
-      this.#input.closed = { reason }
-    }
-
-    if (!this.#output.closed) {
-      this.#output.error(reason)
-      this.#output.closed = { reason }
-    }
-
+  async #onDuplexError(reason?: unknown) {
     const errorEvent = new ErrorEvent("error", { error: reason })
     this.dispatchEvent(errorEvent)
 
@@ -238,50 +238,6 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     this.dispatchEvent(closeEvent)
 
     this.#readyState = this.CLOSED
-
-    // this.#onClean()
-  }
-
-  async #onInputClose() {
-    Console.debug(`${this.#class.name}.onReadClose`)
-
-    this.#input.closed = {}
-    this.#output.close()
-    this.#onClose()
-
-    await this.events.reading.emit("close", [undefined])
-  }
-
-  async #onOutputClose() {
-    Console.debug(`${this.#class.name}.onWriteClose`)
-
-    this.#output.closed = {}
-    this.#input.error()
-    this.#onClose()
-
-    await this.events.writing.emit("close", [undefined])
-  }
-
-  async #onInputError(reason?: unknown) {
-    Console.debug(`${this.#class.name}.onReadError`, { reason })
-
-    this.#input.closed = { reason }
-    this.#output.error(reason)
-
-    await this.events.reading.emit("error", [reason])
-
-    this.#onError(reason)
-  }
-
-  async #onOutputError(reason?: unknown) {
-    Console.debug(`${this.#class.name}.onWriteError`, { reason })
-
-    this.#output.closed = { reason }
-    this.#input.error(reason)
-
-    await this.events.writing.emit("error", [reason])
-
-    this.#onError(reason)
   }
 
   async #onHead(init: ResponseInit) {
@@ -337,7 +293,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.#writeOrThrow(ping)
 
-    await Plume.waitOrCloseOrErrorOrSignal(this.events.reading, "pong", (future: Future<void>) => {
+    await Plume.waitOrCloseOrErrorOrSignal(this.events, "pong", (future: Future<void>) => {
       future.resolve()
       return new None()
     }, AbortSignal.timeout(10_000))
@@ -347,7 +303,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     await Naberius.initBundledOnce()
   }
 
-  async #onInputWrite(chunk: Uint8Array) {
+  async #onInputMessage(chunk: Uint8Array) {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
     using bytesMemory = new Naberius.Memory(chunk)
@@ -422,7 +378,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onPongFrame(frame: WebSocketFrame) {
-    await this.events.reading.emit("pong")
+    await this.events.emit("pong")
   }
 
   async #onBinaryFrame(frame: WebSocketFrame) {
@@ -453,11 +409,13 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
       const close = Readable.readFromBytesOrThrow(WebSocketClose, frame.payload)
       const reason = close.reason == null ? undefined : Bytes.toUtf8(close.reason)
 
-      this.#onClose(reason)
+      Console.debug("Close frame received", close.code, reason)
+
+      await this.duplex.close()
       return
     }
 
-    this.#onClose()
+    await this.duplex.close()
   }
 
   async #onStartFrame(frame: WebSocketFrame) {
@@ -495,7 +453,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     using bitsMemory = new Naberius.Memory(bits)
     const bytesBytes = pack_right(bitsMemory).copyAndDispose()
 
-    this.#output.enqueue(bytesBytes)
+    this.duplex.output.enqueue(bytesBytes)
   }
 
   #splitOrThrow(opcode: number, data: Uint8Array) {

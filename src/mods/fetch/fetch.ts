@@ -2,7 +2,7 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { Disposer } from "@hazae41/disposer"
 import { Future } from "@hazae41/future"
 import { None, Nullable } from "@hazae41/option"
-import { AbortedError, ClosedError, ErroredError } from "@hazae41/plume"
+import { AbortSignals, CloseEvents, ErrorEvents } from "@hazae41/plume"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -102,19 +102,19 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     .pipeTo(stream.writable, { signal, preventClose, preventAbort })
     .catch(() => { })
 
-  using abort = AbortedError.waitOrThrow(signal)
-  using error = ErroredError.waitOrThrow(http.events.input)
-  using close = ClosedError.waitOrThrow(http.events.input)
+  using abort = AbortSignals.waitOrThrow(signal)
+  using error = ErrorEvents.waitOrThrow(http.input.events)
+  using close = CloseEvents.waitOrThrow(http.input.events)
   using pipe = PipeError.waitOrThrow(http, body)
 
-  using head = http.events.input.wait("head", (future: Future<Response>, init) => {
+  using head = http.events.wait("head", (future: Future<Response>, init) => {
     future.resolve(new Response(http.outer.readable, init))
     return new None()
   })
 
   const response = await Promise.race([abort.get(), error.get(), close.get(), pipe.get(), head.get()])
 
-  http.events.input.on("close", async () => {
+  http.input.events.on("close", async () => {
     if (response.headers.get("Connection") !== "close")
       return new None()
 
