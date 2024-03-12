@@ -1,8 +1,8 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Disposer } from "@hazae41/disposer"
 import { Future } from "@hazae41/future"
-import { None, Nullable } from "@hazae41/option"
-import { AbortSignals, CloseEvents, ErrorEvents } from "@hazae41/plume"
+import { Nullable } from "@hazae41/option"
+import { AbortSignals } from "libs/signals/index.js"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -32,34 +32,20 @@ namespace Requests {
 
 }
 
-export class PipeError extends Error {
-  readonly #class = PipeError
-  readonly name = this.#class.name
+namespace Pipe {
 
-  constructor(options: ErrorOptions) {
-    super(`Could not pipe`, options)
-  }
+  export function rejectOnError(http: HttpClientDuplex, body: Nullable<ReadableStream<Uint8Array>>) {
+    const rejectOnError = new Future<never>()
 
-  static from(cause: unknown) {
-    return new PipeError({ cause })
-  }
-
-  static fromAndThrow(cause: unknown) {
-    throw PipeError.from(cause)
-  }
-
-  static waitOrThrow(http: HttpClientDuplex, body: Nullable<ReadableStream<Uint8Array>>) {
     const controller = new AbortController()
-    const future = new Future<never>()
-
     const { signal } = controller
 
     if (body != null)
-      body.pipeTo(http.outer.writable, { signal }).catch(PipeError.fromAndThrow).catch(future.reject)
+      body.pipeTo(http.outer.writable, { signal }).catch(cause => rejectOnError.reject(new Error("Errored", { cause })))
     else
-      http.outer.writable.close().catch(PipeError.fromAndThrow).catch(future.reject)
+      http.outer.writable.close().catch(cause => rejectOnError.reject(new Error("Errored", { cause })))
 
-    return new Disposer(future.promise, () => controller.abort())
+    return new Disposer(rejectOnError.promise, () => controller.abort())
   }
 
 }
@@ -92,36 +78,36 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   if (!headers.has("Accept-Encoding"))
     headers.set("Accept-Encoding", "gzip, deflate")
 
-  const http = new HttpClientDuplex({ method, target, headers })
+  const rejectOnClose = new Future<never>()
+  const rejectOnError = new Future<never>()
 
-  stream.readable
-    .pipeTo(http.inner.writable, { signal, preventCancel })
-    .catch(() => { })
+  const resolveOnHead = new Future<Response>()
 
-  http.inner.readable
-    .pipeTo(stream.writable, { signal, preventClose, preventAbort })
-    .catch(() => { })
+  const http = new HttpClientDuplex({
+    method,
+    target,
+    headers,
 
-  using abort = AbortSignals.waitOrThrow(signal)
-  using error = ErrorEvents.waitOrThrow(http.input.events)
-  using close = CloseEvents.waitOrThrow(http.input.events)
-  using pipe = PipeError.waitOrThrow(http, body)
-
-  using head = http.events.wait("head", (future: Future<Response>, init) => {
-    future.resolve(new Response(http.outer.readable, init))
-    return new None()
+    close() { rejectOnClose.reject(new Error("Closed")) },
+    error(cause) { rejectOnError.reject(new Error("Error", { cause })) },
+    head(init) { resolveOnHead.resolve(new Response(this.outer.readable, init)) }
   })
 
-  const response = await Promise.race([abort.get(), error.get(), close.get(), pipe.get(), head.get()])
+  stream.readable.pipeTo(http.inner.writable, { signal, preventCancel }).catch(() => { })
+  http.inner.readable.pipeTo(stream.writable, { signal, preventClose, preventAbort }).catch(() => { })
 
-  http.input.events.on("close", async () => {
+  using rejectOnAbort = AbortSignals.rejectOnAbort(signal)
+  using rejectOnPipe = Pipe.rejectOnError(http, body)
+
+  const response = await Promise.race([resolveOnHead.promise, rejectOnClose.promise, rejectOnError.promise, rejectOnAbort.get(), rejectOnPipe.get()])
+
+  rejectOnClose.promise.catch(async () => {
     if (response.headers.get("Connection") !== "close")
-      return new None()
+      return
+    const error = new Error(`Response "Connection" header is "close"`)
 
-    await stream.readable.cancel(new Error(`Response "Connection" header is "close"`))
-
-    return new None()
-  }, { once: true })
+    await stream.readable.cancel(error)
+  })
 
   return response
 }

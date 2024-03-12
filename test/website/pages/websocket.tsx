@@ -1,24 +1,15 @@
+import { Opaque, Writable } from "@hazae41/binary"
 import { bench } from "@hazae41/deimos"
 import { Fleche } from "@hazae41/fleche"
 import { Future } from "@hazae41/future"
-import { Catched } from "@hazae41/result"
-import { WebSocketStream, createWebSocketStream } from "libs/transports/websocket"
+import { WebSocketDuplex, createWebSocketDuplex } from "libs/transports/websocket"
 import { useCallback, useEffect, useState } from "react"
 
-async function createFlecheSocket(tcp: WebSocketStream) {
+async function createFlecheSocket(tcp: ReadableWritablePair<Opaque, Writable>) {
   const socket = new Fleche.WebSocket("ws://localhost", undefined)
 
-  tcp.readable
-    .pipeTo(socket.inner.writable, { preventCancel: true })
-    .catch(Catched.throwOrErr)
-    .then(r => r?.ignore())
-    .catch(console.error)
-
-  socket.inner.readable
-    .pipeTo(tcp.writable, { preventClose: true, preventAbort: true })
-    .catch(Catched.throwOrErr)
-    .then(r => r?.ignore())
-    .catch(console.error)
+  tcp.readable.pipeTo(socket.inner.writable, { preventCancel: true }).catch(() => { })
+  socket.inner.readable.pipeTo(tcp.writable, { preventClose: true, preventAbort: true }).catch(() => { })
 
   socket.binaryType = "arraybuffer"
 
@@ -44,10 +35,10 @@ async function createNativeSocket() {
 }
 
 export default function Page() {
-  const [tcp, setTcp] = useState<WebSocketStream>()
+  const [tcp, setTcp] = useState<WebSocketDuplex>()
 
   useEffect(() => {
-    createWebSocketStream("ws://localhost:8080",).then(setTcp)
+    createWebSocketDuplex("ws://localhost:8080",).then(setTcp)
   }, [])
 
   const [flecheSocket, setFlecheSocket] = useState<WebSocket>()
@@ -55,7 +46,7 @@ export default function Page() {
   useEffect(() => {
     if (tcp == null)
       return
-    createFlecheSocket(tcp).then(setFlecheSocket)
+    createFlecheSocket(tcp.outer).then(setFlecheSocket)
   }, [tcp])
 
   const [nativeSocket, setNativeSocket] = useState<WebSocket>()
