@@ -49,7 +49,7 @@ export class HttpClientDuplex {
   ) {
     this.duplex = new FullDuplex<Opaque, Writable, Uint8Array, Uint8Array>({
       input: {
-        write: m => this.#onInputMessage(m)
+        write: m => this.#onInputWrite(m)
       },
       output: {
         start: () => this.#onOutputStart(),
@@ -99,7 +99,7 @@ export class HttpClientDuplex {
     this.duplex.close()
   }
 
-  async #onInputMessage(chunk: Opaque) {
+  async #onInputWrite(chunk: Opaque) {
     Console.debug(this.#class.name, "<-", chunk.bytes.length, Bytes.toUtf8(chunk.bytes))
 
     let bytes = chunk.bytes
@@ -172,14 +172,15 @@ export class HttpClientDuplex {
 
     const sourcer = new SuperReadableStream<Uint8Array>({})
 
-    const write = (c: Uint8Array) => this.duplex.output.enqueue(new Opaque(c))
-    const sinker = new SuperWritableStream<Uint8Array>({ write })
+    const sinker = new SuperWritableStream<Uint8Array>({
+      write: c => this.duplex.output.enqueue(new Opaque(c)),
+      abort: e => this.duplex.output.error(e),
+      close: () => this.duplex.output.close(),
+    })
 
     sourcer.substream
       .pipeThrough(encoder)
       .pipeTo(sinker.substream)
-      .then(() => this.duplex.output.close())
-      .catch(e => this.duplex.output.error(e))
       .catch(() => { })
 
     return { sourcer }
@@ -206,14 +207,15 @@ export class HttpClientDuplex {
 
     const sourcer = new SuperReadableStream<Uint8Array>({})
 
-    const write = (c: Uint8Array) => this.duplex.input.enqueue(c)
-    const sinker = new SuperWritableStream<Uint8Array>({ write })
+    const sinker = new SuperWritableStream<Uint8Array>({
+      write: c => this.duplex.input.enqueue(c),
+      abort: e => this.duplex.input.error(e),
+      close: () => this.duplex.input.close(),
+    })
 
     sourcer.substream
       .pipeThrough(decoder)
       .pipeTo(sinker.substream)
-      .then(() => this.duplex.input.close())
-      .catch(e => this.duplex.input.error(e))
       .catch(() => { })
 
     return { sourcer }
