@@ -3,10 +3,10 @@ import { Bytes } from "@hazae41/bytes"
 import { FullDuplex, SimplexParams, SuperReadableStream, SuperWritableStream } from "@hazae41/cascade"
 import { Future } from "@hazae41/future"
 import { Nullable } from "@hazae41/option"
-import { Console } from "index.js"
 import { Awaitable } from "libs/promises/index.js"
 import { Resizer } from "libs/resizer/resizer.js"
 import { Strings } from "libs/strings/strings.js"
+import { Console } from "mods/console/index.js"
 import { ContentLengthOverflowError, InvalidHttpStateError, UnsupportedContentEncoding, UnsupportedTransferEncoding } from "./errors.js"
 import { HttpCompression, HttpHeadedState, HttpHeadingState, HttpState, HttpTransfer, HttpUpgradingState } from "./state.js"
 
@@ -49,12 +49,12 @@ export class HttpClientDuplex {
   ) {
     this.duplex = new FullDuplex<Opaque, Writable, Uint8Array, Uint8Array>({
       input: {
-        message: m => this.#onInputMessage(m)
+        write: m => this.#onInputMessage(m)
       },
       output: {
-        open: () => this.#onOutputStart(),
-        message: m => this.#onOutputTransform(m),
-        flush: () => this.#onOutputFlush()
+        start: () => this.#onOutputStart(),
+        write: m => this.#onOutputWrite(m),
+        close: () => this.#onOutputClose()
       },
       close: () => this.params.close?.call(this),
       error: e => this.params.error?.call(this, e)
@@ -413,7 +413,7 @@ export class HttpClientDuplex {
     }
   }
 
-  async #onOutputTransform(chunk: Uint8Array) {
+  async #onOutputWrite(chunk: Uint8Array) {
     Console.debug(this.#class.name, "->", Bytes.toUtf8(chunk))
 
     if (this.#state.type === "upgrading" || this.#state.type === "upgraded") {
@@ -477,7 +477,7 @@ export class HttpClientDuplex {
     }
   }
 
-  async #onOutputFlush() {
+  async #onOutputClose() {
     if (this.#state.type === "heading") {
 
       if (this.#state.client_transfer.type === "none") {

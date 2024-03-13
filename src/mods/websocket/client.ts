@@ -89,8 +89,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     this.duplex = new HalfDuplex<Uint8Array, Uint8Array>({
       input: {
-        open: () => this.#onInputStart(),
-        message: m => this.#onInputMessage(m)
+        start: () => this.#onInputStart(),
+        write: m => this.#onInputWrite(m)
       },
       close: () => this.#onDuplexClose(),
       error: e => this.#onDuplexError(e)
@@ -305,7 +305,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     await Naberius.initBundledOnce()
   }
 
-  async #onInputMessage(chunk: Uint8Array) {
+  async #onInputWrite(chunk: Uint8Array) {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
     using bytesMemory = new Naberius.Memory(chunk)

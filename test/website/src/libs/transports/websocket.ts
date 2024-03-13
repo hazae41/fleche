@@ -29,7 +29,7 @@ export class WebSocketDuplex {
 
     this.duplex = new HalfDuplex<Opaque, Writable>({
       output: {
-        message(message) {
+        write(message) {
           socket.send(Writable.writeToBytesOrThrow(message))
         },
       },
