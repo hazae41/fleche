@@ -78,19 +78,30 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   if (!headers.has("Accept-Encoding"))
     headers.set("Accept-Encoding", "gzip, deflate")
 
+  const resolveOnHead = new Future<Response>()
+
   const rejectOnClose = new Future<never>()
   const rejectOnError = new Future<never>()
 
-  const resolveOnHead = new Future<Response>()
+  rejectOnClose.promise.catch(() => { })
+  rejectOnError.promise.catch(() => { })
 
   const http = new HttpClientDuplex({
     method,
     target,
     headers,
 
-    close() { rejectOnClose.reject(new Error("Closed")) },
-    error(cause) { rejectOnError.reject(new Error("Error", { cause })) },
-    head(init) { resolveOnHead.resolve(new Response(this.outer.readable, init)) }
+    head(init) {
+      resolveOnHead.resolve(new Response(this.outer.readable, init))
+    },
+
+    error(cause) {
+      rejectOnError.reject(new Error("Error", { cause }))
+    },
+
+    close() {
+      rejectOnClose.reject(new Error("Closed"))
+    }
   })
 
   stream.readable.pipeTo(http.inner.writable, { signal, preventCancel }).catch(() => { })
@@ -98,6 +109,9 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
 
   using rejectOnAbort = AbortSignals.rejectOnAbort(signal)
   using rejectOnPipe = Pipe.rejectOnError(http, body)
+
+  rejectOnAbort.get().catch(() => { })
+  rejectOnPipe.get().catch(() => { })
 
   return await Promise.race([resolveOnHead.promise, rejectOnClose.promise, rejectOnError.promise, rejectOnAbort.get(), rejectOnPipe.get()])
 }
