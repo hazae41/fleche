@@ -93,41 +93,11 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     head(init) { resolveOnHead.resolve(new Response(this.outer.readable, init)) }
   })
 
-  const resolveOnInputUnlock = new Future<void>()
-  const resolveOnOutputUnlock = new Future<void>()
-
-  stream.readable
-    .pipeTo(http.inner.writable, { signal, preventCancel })
-    .finally(() => resolveOnInputUnlock.resolve())
-    .catch(() => { })
-
-  http.inner.readable
-    .pipeTo(stream.writable, { signal, preventClose, preventAbort })
-    .finally(() => resolveOnOutputUnlock.resolve())
-    .catch(() => { })
+  stream.readable.pipeTo(http.inner.writable, { signal, preventCancel }).catch(() => { })
+  http.inner.readable.pipeTo(stream.writable, { signal, preventClose, preventAbort }).catch(() => { })
 
   using rejectOnAbort = AbortSignals.rejectOnAbort(signal)
   using rejectOnPipe = Pipe.rejectOnError(http, body)
 
-  const response = await Promise.race([resolveOnHead.promise, rejectOnClose.promise, rejectOnError.promise, rejectOnAbort.get(), rejectOnPipe.get()])
-
-  rejectOnClose.promise.catch(async () => {
-    if (response.headers.get("Connection") !== "close")
-      return
-
-    await resolveOnOutputUnlock.promise
-    await stream.writable.close()
-  })
-
-  rejectOnClose.promise.catch(async () => {
-    if (response.headers.get("Connection") !== "close")
-      return
-    const error = new Error("Connection closed")
-
-    await resolveOnInputUnlock.promise
-    await stream.readable.cancel(error)
-  })
-
-
-  return response
+  return await Promise.race([resolveOnHead.promise, rejectOnClose.promise, rejectOnError.promise, rejectOnAbort.get(), rejectOnPipe.get()])
 }
