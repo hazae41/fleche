@@ -37,6 +37,8 @@ namespace Pipe {
   export function rejectOnError(http: HttpClientDuplex, body: Nullable<ReadableStream<Uint8Array>>) {
     const rejectOnError = new Future<never>()
 
+    rejectOnError.promise.catch(() => { })
+
     const controller = new AbortController()
     const { signal } = controller
 
@@ -81,9 +83,9 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   const resolveOnHead = new Future<Response>()
 
   const rejectOnClose = new Future<never>()
-  const rejectOnError = new Future<never>()
-
   rejectOnClose.promise.catch(() => { })
+
+  const rejectOnError = new Future<never>()
   rejectOnError.promise.catch(() => { })
 
   const http = new HttpClientDuplex({
@@ -94,11 +96,9 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
     head(init) {
       resolveOnHead.resolve(new Response(this.outer.readable, init))
     },
-
     error(cause) {
       rejectOnError.reject(new Error("Error", { cause }))
     },
-
     close() {
       rejectOnClose.reject(new Error("Closed"))
     }
@@ -109,9 +109,6 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
 
   using rejectOnAbort = AbortSignals.rejectOnAbort(signal)
   using rejectOnPipe = Pipe.rejectOnError(http, body)
-
-  rejectOnAbort.get().catch(() => { })
-  rejectOnPipe.get().catch(() => { })
 
   return await Promise.race([resolveOnHead.promise, rejectOnClose.promise, rejectOnError.promise, rejectOnAbort.get(), rejectOnPipe.get()])
 }

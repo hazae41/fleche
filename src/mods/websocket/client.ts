@@ -298,9 +298,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
     await this.#writeOrThrow(ping)
 
     const rejectOnClose = new Future<never>()
-    const rejectOnError = new Future<never>()
-
     rejectOnClose.promise.catch(() => { })
+
+    const rejectOnError = new Future<never>()
     rejectOnError.promise.catch(() => { })
 
     this.#resolveOnClose.promise.then(() => rejectOnClose.reject(new Error("Closed")))
