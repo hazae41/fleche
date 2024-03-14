@@ -94,7 +94,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   })
 
   const resolveOnInputUnlock = new Future<void>()
-  // const resolveOnOutputUnlock = new Future<void>()
+  const resolveOnOutputUnlock = new Future<void>()
 
   stream.readable
     .pipeTo(http.inner.writable, { signal, preventCancel })
@@ -103,7 +103,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
 
   http.inner.readable
     .pipeTo(stream.writable, { signal, preventClose, preventAbort })
-    // .finally(() => resolveOnOutputUnlock.resolve())
+    .finally(() => resolveOnOutputUnlock.resolve())
     .catch(() => { })
 
   using rejectOnAbort = AbortSignals.rejectOnAbort(signal)
@@ -114,11 +114,20 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   rejectOnClose.promise.catch(async () => {
     if (response.headers.get("Connection") !== "close")
       return
-    const error = new Error(`Response "Connection" header is "close"`)
+
+    await resolveOnOutputUnlock.promise
+    await stream.writable.close()
+  })
+
+  rejectOnClose.promise.catch(async () => {
+    if (response.headers.get("Connection") !== "close")
+      return
+    const error = new Error("Connection closed")
 
     await resolveOnInputUnlock.promise
     await stream.readable.cancel(error)
   })
+
 
   return response
 }
