@@ -52,8 +52,8 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   readonly extensions = ""
   readonly protocol = ""
 
-  readonly #rejectOnClose = new Future<never>()
-  readonly #rejectOnError = new Future<never>()
+  readonly #resolveOnClose = new Future<void>()
+  readonly #resolveOnError = new Future<unknown>()
 
   #resolveOnPong = new Future<void>()
 
@@ -222,7 +222,7 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onDuplexClose() {
-    this.#rejectOnClose.reject(new Error("Closed"))
+    this.#resolveOnClose.resolve()
 
     const closeEvent = new CloseEvent("close", { wasClean: false })
     this.dispatchEvent(closeEvent)
@@ -231,8 +231,9 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onDuplexError(cause?: unknown) {
+    this.#resolveOnError.resolve(cause)
+
     const error = new Error("Errored", { cause })
-    this.#rejectOnError.reject(error)
 
     const errorEvent = new ErrorEvent("error", { error })
     this.dispatchEvent(errorEvent)
@@ -296,9 +297,18 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#writeOrThrow(ping)
 
+    const rejectOnClose = new Future<never>()
+    const rejectOnError = new Future<never>()
+
+    rejectOnClose.promise.catch(() => { })
+    rejectOnError.promise.catch(() => { })
+
+    this.#resolveOnClose.promise.then(() => rejectOnClose.reject(new Error("Closed")))
+    this.#resolveOnError.promise.then(cause => rejectOnError.reject(new Error("Errored", { cause })))
+
     using rejectOnAbort = AbortSignals.rejectOnAbort(AbortSignal.timeout(10_000))
 
-    await Promise.race([this.#resolveOnPong.promise, this.#rejectOnError.promise, this.#rejectOnClose.promise, rejectOnAbort.get()])
+    await Promise.race([this.#resolveOnPong.promise, rejectOnError.promise, rejectOnClose.promise, rejectOnAbort.get()])
   }
 
   async #onInputStart() {
