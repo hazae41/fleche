@@ -12,9 +12,8 @@ export namespace AbortSignals {
     const onClean = () => signal.removeEventListener("abort", onAbort)
 
     signal.addEventListener("abort", onAbort)
-    rejectOnAbort.promise.finally(onClean)
 
-    return new Disposer(rejectOnAbort.promise, onClean)
+    return new Disposer(rejectOnAbort.promise.finally(onClean), onClean)
   }
 
 }
