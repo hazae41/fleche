@@ -5,9 +5,9 @@ import { HalfDuplex } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
 import { Future } from "@hazae41/future";
 import { Naberius, pack_right, unpack } from "@hazae41/naberius";
+import { Signals } from "@hazae41/signals";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Resizer } from "libs/resizer/resizer.js";
-import { AbortSignals } from "libs/signals/index.js";
 import { Strings } from "libs/strings/strings.js";
 import { Console } from "mods/console/index.js";
 import { HttpClientDuplex } from "mods/http/client.js";
@@ -297,18 +297,12 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
 
     await this.#writeOrThrow(ping)
 
-    const rejectOnClose = new Future<never>()
-    rejectOnClose.promise.catch(() => { })
+    const rejectOnClose = this.#resolveOnClose.promise.then(() => { throw new Error("Closed") })
+    const rejectOnError = this.#resolveOnError.promise.then(cause => { throw new Error("Errored", { cause }) })
 
-    const rejectOnError = new Future<never>()
-    rejectOnError.promise.catch(() => { })
+    using rejectOnAbort = Signals.rejectOnAbort(AbortSignal.timeout(10_000))
 
-    this.#resolveOnClose.promise.then(() => rejectOnClose.reject(new Error("Closed")))
-    this.#resolveOnError.promise.then(cause => rejectOnError.reject(new Error("Errored", { cause })))
-
-    using rejectOnAbort = AbortSignals.rejectOnAbort(AbortSignal.timeout(10_000))
-
-    await Promise.race([this.#resolveOnPong.promise, rejectOnError.promise, rejectOnClose.promise, rejectOnAbort.get()])
+    await Promise.race([this.#resolveOnPong.promise, rejectOnError, rejectOnClose, rejectOnAbort.get()])
   }
 
   async #onInputStart() {

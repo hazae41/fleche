@@ -2,7 +2,7 @@ import { Opaque, Writable } from "@hazae41/binary"
 import { Disposer } from "@hazae41/disposer"
 import { Future } from "@hazae41/future"
 import { Nullable } from "@hazae41/option"
-import { AbortSignals } from "libs/signals/index.js"
+import { Signals } from "@hazae41/signals"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
@@ -36,8 +36,6 @@ namespace Pipe {
 
   export function rejectOnError(http: HttpClientDuplex, body: Nullable<ReadableStream<Uint8Array>>) {
     const rejectOnError = new Future<never>()
-
-    rejectOnError.promise.catch(() => { })
 
     const controller = new AbortController()
     const { signal } = controller
@@ -83,10 +81,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   const resolveOnHead = new Future<Response>()
 
   const rejectOnClose = new Future<never>()
-  rejectOnClose.promise.catch(() => { })
-
   const rejectOnError = new Future<never>()
-  rejectOnError.promise.catch(() => { })
 
   const http = new HttpClientDuplex({
     method,
@@ -107,7 +102,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
   stream.readable.pipeTo(http.inner.writable, { signal, preventCancel }).catch(() => { })
   http.inner.readable.pipeTo(stream.writable, { signal, preventClose, preventAbort }).catch(() => { })
 
-  using rejectOnAbort = AbortSignals.rejectOnAbort(signal)
+  using rejectOnAbort = Signals.rejectOnAbort(signal)
   using rejectOnPipe = Pipe.rejectOnError(http, body)
 
   return await Promise.race([resolveOnHead.promise, rejectOnClose.promise, rejectOnError.promise, rejectOnAbort.get(), rejectOnPipe.get()])
