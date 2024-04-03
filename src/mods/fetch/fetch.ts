@@ -92,7 +92,7 @@ export async function fetch(input: RequestInfo | URL, init: RequestInit & FetchP
       resolveOnHead.resolve(new Response(this.outer.readable, init))
     },
     error(cause) {
-      rejectOnError.reject(new Error("Error", { cause }))
+      rejectOnError.reject(new Error("Errored", { cause }))
     },
     close() {
       rejectOnClose.reject(new Error("Closed"))
