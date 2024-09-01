@@ -1,10 +1,10 @@
 import { Base64 } from "@hazae41/base64";
 import { Readable, Writable } from "@hazae41/binary";
+import { bitwise_pack_right, bitwise_unpack, BitwiseWasm } from "@hazae41/bitwise.wasm";
 import { Bytes } from "@hazae41/bytes";
 import { HalfDuplex } from "@hazae41/cascade";
 import { Cursor } from "@hazae41/cursor";
 import { Future } from "@hazae41/future";
-import { Naberius, pack_right, unpack } from "@hazae41/naberius";
 import { Signals } from "@hazae41/signals";
 import { Iterators } from "libs/iterables/iterators.js";
 import { Resizer } from "libs/resizer/resizer.js";
@@ -306,14 +306,14 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   }
 
   async #onInputStart() {
-    await Naberius.initBundledOnce()
+    await BitwiseWasm.initBundled()
   }
 
   async #onInputWrite(chunk: Uint8Array) {
     // Console.debug(this.#class.name, "<-", chunk.length)
 
-    using bytesMemory = new Naberius.Memory(chunk)
-    using bitsMemory = unpack(bytesMemory)
+    using bytesMemory = new BitwiseWasm.Memory(chunk)
+    using bitsMemory = bitwise_unpack(bytesMemory)
 
     if (this.#buffer.inner.offset)
       return await this.#onReadBuffered(bitsMemory.bytes)
@@ -456,10 +456,10 @@ export class WebSocketClientDuplex extends EventTarget implements WebSocket {
   async #writeOrThrow(frame: WebSocketFrame) {
     const bits = Writable.writeToBytesOrThrow(frame)
 
-    using bitsMemory = new Naberius.Memory(bits)
-    const bytesBytes = pack_right(bitsMemory).copyAndDispose()
+    using bitsMemory = new BitwiseWasm.Memory(bits)
+    using bytesMemory = bitwise_pack_right(bitsMemory)
 
-    this.duplex.output.enqueue(bytesBytes)
+    this.duplex.output.enqueue(bytesMemory.bytes.slice())
   }
 
   async #splitOrThrow(opcode: number, data: Uint8Array) {

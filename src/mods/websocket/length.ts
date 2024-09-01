@@ -1,6 +1,6 @@
+import { bitwise_unpack, BitwiseWasm } from "@hazae41/bitwise.wasm"
 import { Bytes } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
-import { Naberius, unpack } from "@hazae41/naberius"
 
 export class Length {
 
@@ -19,8 +19,8 @@ export class Length {
   #writeOrThrow7(cursor: Cursor) {
     const lengthBytesBytes = new Uint8Array([this.value])
 
-    using lengthBytesMemory = new Naberius.Memory(lengthBytesBytes)
-    using lengthBitsMemory = unpack(lengthBytesMemory)
+    using lengthBytesMemory = new BitwiseWasm.Memory(lengthBytesBytes)
+    using lengthBitsMemory = bitwise_unpack(lengthBytesMemory)
 
     cursor.writeOrThrow(lengthBitsMemory.bytes.subarray(1)) // 8 - 1
   }
@@ -30,8 +30,8 @@ export class Length {
     lengthBytesCursor.writeUint8OrThrow(126)
     lengthBytesCursor.writeUint16OrThrow(this.value)
 
-    using lengthBytesMemory = new Naberius.Memory(lengthBytesCursor.bytes)
-    using lengthBitsMemory = unpack(lengthBytesMemory)
+    using lengthBytesMemory = new BitwiseWasm.Memory(lengthBytesCursor.bytes)
+    using lengthBitsMemory = bitwise_unpack(lengthBytesMemory)
 
     cursor.writeOrThrow(lengthBitsMemory.bytes.subarray(1)) // (8 + 16) - 1
   }
@@ -41,8 +41,8 @@ export class Length {
     subcursor.writeUint8OrThrow(127)
     subcursor.writeUint64OrThrow(BigInt(this.value))
 
-    using lengthBytesMemory = new Naberius.Memory(subcursor.bytes)
-    using lengthBitsMemory = unpack(lengthBytesMemory)
+    using lengthBytesMemory = new BitwiseWasm.Memory(subcursor.bytes)
+    using lengthBitsMemory = bitwise_unpack(lengthBytesMemory)
 
     cursor.writeOrThrow(lengthBitsMemory.bytes.subarray(1)) // (8 + 64) - 1
   }

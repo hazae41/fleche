@@ -1,7 +1,7 @@
 import { ReadUnderflowError } from "@hazae41/binary"
+import { bitwise_pack_left, bitwise_unpack, bitwise_xor_mod, BitwiseWasm } from "@hazae41/bitwise.wasm"
 import { Bytes, Uint8Array } from "@hazae41/bytes"
 import { Cursor } from "@hazae41/cursor"
-import { Naberius, pack_left, unpack, xor_mod } from "@hazae41/naberius"
 import { Length } from "mods/websocket/length.js"
 
 export class WebSocketFrame {
@@ -69,8 +69,8 @@ export class WebSocketFrame {
     const opcodeBytesCursor = new Cursor(Bytes.alloc(1))
     opcodeBytesCursor.writeUint8OrThrow(this.opcode)
 
-    using opcodeBytesMemory = new Naberius.Memory(opcodeBytesCursor.bytes)
-    using opcodeBitsMemory = unpack(opcodeBytesMemory)
+    using opcodeBytesMemory = new BitwiseWasm.Memory(opcodeBytesCursor.bytes)
+    using opcodeBitsMemory = bitwise_unpack(opcodeBytesMemory)
 
     cursor.writeOrThrow(opcodeBitsMemory.bytes.subarray(4)) // 8 - 4
 
@@ -80,21 +80,21 @@ export class WebSocketFrame {
     this.length.writeOrThrow(cursor)
 
     if (this.mask != null) {
-      using maskBytesMemory = new Naberius.Memory(this.mask)
-      using maskBitsMemory = unpack(maskBytesMemory)
+      using maskBytesMemory = new BitwiseWasm.Memory(this.mask)
+      using maskBitsMemory = bitwise_unpack(maskBytesMemory)
       cursor.writeOrThrow(maskBitsMemory.bytes)
 
-      using xoredBytesMemory = new Naberius.Memory(this.payload)
-      xor_mod(xoredBytesMemory, maskBytesMemory)
+      using xoredBytesMemory = new BitwiseWasm.Memory(this.payload)
+      bitwise_xor_mod(xoredBytesMemory, maskBytesMemory)
 
-      using xoredBitsMemory = unpack(xoredBytesMemory)
+      using xoredBitsMemory = bitwise_unpack(xoredBytesMemory)
       cursor.writeOrThrow(xoredBitsMemory.bytes)
 
       return
     }
 
-    using payloadBytesMemory = new Naberius.Memory(this.payload)
-    using payloadBitsMemory = unpack(payloadBytesMemory)
+    using payloadBytesMemory = new BitwiseWasm.Memory(this.payload)
+    using payloadBitsMemory = bitwise_unpack(payloadBytesMemory)
     cursor.writeOrThrow(payloadBitsMemory.bytes)
   }
 
@@ -119,14 +119,14 @@ export class WebSocketFrame {
 
     if (masked) {
       const maskBitsBytes = cursor.readOrThrow(4 * 8)
-      using maskBitsMemory = new Naberius.Memory(maskBitsBytes)
-      using maskBytesMemory = pack_left(maskBitsMemory)
+      using maskBitsMemory = new BitwiseWasm.Memory(maskBitsBytes)
+      using maskBytesMemory = bitwise_pack_left(maskBitsMemory)
 
       const xoredBitsBytes = cursor.readOrThrow(length.value * 8)
-      using xoredBitsMemory = new Naberius.Memory(xoredBitsBytes)
-      using xoredBytesMemory = pack_left(xoredBitsMemory)
+      using xoredBitsMemory = new BitwiseWasm.Memory(xoredBitsBytes)
+      using xoredBytesMemory = bitwise_pack_left(xoredBitsMemory)
 
-      xor_mod(xoredBytesMemory, maskBytesMemory)
+      bitwise_xor_mod(xoredBytesMemory, maskBytesMemory)
 
       const mask = maskBytesMemory.bytes.slice() as Uint8Array<4>
       const payload = xoredBytesMemory.bytes.slice()
@@ -135,8 +135,8 @@ export class WebSocketFrame {
     }
 
     const payloadBitsBytes = cursor.readOrThrow(length.value * 8)
-    using payloadBitsMemory = new Naberius.Memory(payloadBitsBytes)
-    using payloadBytesMemory = pack_left(payloadBitsMemory)
+    using payloadBitsMemory = new BitwiseWasm.Memory(payloadBitsBytes)
+    using payloadBytesMemory = bitwise_pack_left(payloadBitsMemory)
 
     const payload = payloadBytesMemory.bytes.slice()
 
