@@ -1,5 +1,5 @@
 import { SuperReadableStream } from "@hazae41/cascade"
-import { Nullable } from "@hazae41/option"
+import { Nullable } from "libs/nullable/index.js"
 import { Resizer } from "libs/resizer/resizer.js"
 
 export type HttpState =

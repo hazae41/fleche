@@ -128,7 +128,7 @@ export class WebSocketFrame {
 
       xor_mod(xoredBytesMemory, maskBytesMemory)
 
-      const mask = maskBytesMemory.bytes.slice() as Bytes<4>
+      const mask = maskBytesMemory.bytes.slice() as Uint8Array<4>
       const payload = xoredBytesMemory.bytes.slice()
 
       return WebSocketFrame.from({ final, opcode, payload, mask })

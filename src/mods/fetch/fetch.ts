@@ -1,8 +1,8 @@
 import { Opaque, Writable } from "@hazae41/binary"
 import { Disposer } from "@hazae41/disposer"
 import { Future } from "@hazae41/future"
-import { Nullable } from "@hazae41/option"
 import { Signals } from "@hazae41/signals"
+import { Nullable } from "libs/nullable/index.js"
 import { HttpClientDuplex } from "mods/http/client.js"
 
 export interface FetchParams {
