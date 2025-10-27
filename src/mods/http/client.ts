@@ -49,7 +49,8 @@ export class HttpClientDuplex {
   ) {
     this.duplex = new FullDuplex<Opaque, Writable, Uint8Array, Uint8Array>({
       input: {
-        write: m => this.#onInputWrite(m)
+        write: m => this.#onInputWrite(m),
+        close: () => this.#onInputClose(),
       },
       output: {
         start: () => this.#onOutputStart(),
@@ -130,6 +131,21 @@ export class HttpClientDuplex {
     throw new InvalidHttpStateError()
   }
 
+  async #onInputClose() {
+    if (this.#state.type === 'headed') {
+      const { server_transfer, server_compression } = this.#state;
+
+      // For "none" transfer type, connection close signals end of response
+      if (server_transfer.type === 'none' && server_compression) {
+        // First close the sourcer to signal end of input
+        server_compression.sourcer.close();
+
+        // Then wait for the decompression pipeline to complete
+        await server_compression.pipeline;
+      }
+    }
+  }
+
   #getTransferOrThrow(headers: Headers): HttpTransfer {
     const type = headers.get("Transfer-Encoding")
 
@@ -178,12 +194,12 @@ export class HttpClientDuplex {
       close: () => this.duplex.output.close(),
     })
 
-    sourcer.substream
+    const pipeline = sourcer.substream
       .pipeThrough(encoder)
       .pipeTo(sinker.substream)
       .catch(() => { })
 
-    return { sourcer }
+    return { sourcer, pipeline }
   }
 
   async #getDecompressionStreamOrNull(type: string): Promise<Nullable<DecompressionStream>> {
@@ -213,12 +229,12 @@ export class HttpClientDuplex {
       close: () => this.duplex.input.close(),
     })
 
-    sourcer.substream
+    const pipeline = sourcer.substream
       .pipeThrough(decoder)
       .pipeTo(sinker.substream)
       .catch(() => { })
 
-    return { sourcer }
+    return { sourcer, pipeline }
   }
 
   async #onReadHead(chunk: Uint8Array, state: HttpHeadingState | HttpUpgradingState): Promise<Nullable<Uint8Array>> {

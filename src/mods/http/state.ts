@@ -63,4 +63,5 @@ export interface HttpLengthedTransfer {
 
 export interface HttpCompression {
   readonly sourcer: SuperReadableStream<Uint8Array>
+  readonly pipeline: Promise<void>
 }
